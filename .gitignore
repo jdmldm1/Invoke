@@ -1,0 +1,27 @@
+# Compiled binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Go build cache
+/vendor/
+
+# Go test artifacts
+*.test
+*.out
+coverage.txt
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*.orig
+# OS metadata
+Thumbs.db
+.DS_Store
+
+# Local config (contains personal Ollama host/model preferences)
+.powerterm.json
+.powerterm_layouts.json

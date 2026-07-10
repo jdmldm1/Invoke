@@ -1,0 +1,29 @@
+{
+  "$schema": "https://tc-hib.github.io/go-winres/schema.json",
+  "RT_GROUP_ICON": {
+    "APP": {
+      "0000": "invoke.ico"
+    }
+  },
+  "RT_MANIFEST": {
+    "#1": {
+      "0409": {
+        "assemblyIdentity": {
+          "name": "Invoke.Terminal.App",
+          "version": "1.0.0.0"
+        },
+        "description": "Invoke Terminal",
+        "requestedExecutionLevel": "asInvoker",
+        "supportedOS": [
+          "vista",
+          "win7",
+          "win8",
+          "win8.1",
+          "win10"
+        ],
+        "dpiAware": true,
+        "dpiAwareness": "PerMonitorV2, PerMonitor"
+      }
+    }
+  }
+}
