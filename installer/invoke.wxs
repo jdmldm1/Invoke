@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Invoke per-user MSI installer (WiX v4)
+  Installs to %LOCALAPPDATA%\Programs\Invoke — no administrator rights required.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+
+  <Package
+    Name="Invoke"
+    Manufacturer="Invoke"
+    Version="!(bind.FileVersion.invoke_app_exe)"
+    UpgradeCode="4B7E1F2A-3C6D-4E8F-9A0B-1D2E3F4A5B6C"
+    Scope="perUser"
+    Compressed="yes">
+
+    <!-- Allow silent upgrades; remove older versions automatically -->
+    <MajorUpgrade
+      DowngradeErrorMessage="A newer version of Invoke is already installed."
+      Schedule="afterInstallInitialize" />
+
+    <!-- Install into %LOCALAPPDATA%\Programs\Invoke -->
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="ProgramsFolder" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="Invoke" />
+      </Directory>
+    </StandardDirectory>
+
+    <!-- Start Menu shortcut folder -->
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ApplicationProgramsFolder" Name="Invoke" />
+    </StandardDirectory>
+
+    <Feature Id="ProductFeature" Title="Invoke" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="ShortcutComponents" />
+    </Feature>
+
+  </Package>
+
+  <!-- ── Binaries ─────────────────────────────────────────── -->
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+
+      <!-- invoke-app.exe — the desktop launcher (primary executable) -->
+      <Component Id="InvokeApp">
+        <File Id="invoke_app_exe"
+              Name="invoke-app.exe"
+              Source="build\invoke-app.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- invoke-server.exe — the HTTP/WebSocket server (background) -->
+      <Component Id="InvokeServer">
+        <File Id="invoke_server_exe"
+              Name="invoke-server.exe"
+              Source="build\invoke-server.exe"
+              KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+  </Fragment>
+
+  <!-- ── Shortcuts ─────────────────────────────────────────── -->
+  <Fragment>
+    <ComponentGroup Id="ShortcutComponents" Directory="ApplicationProgramsFolder">
+
+      <!-- Start Menu shortcut -->
+      <Component Id="ApplicationShortcut">
+        <Shortcut Id="StartMenuShortcut"
+                  Name="Invoke"
+                  Description="Browser-based terminal workspace"
+                  Target="[INSTALLFOLDER]invoke-app.exe"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <!-- Remove the Start Menu folder on uninstall -->
+        <RemoveFolder Id="CleanupStartMenu"
+                      Directory="ApplicationProgramsFolder"
+                      On="uninstall" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\Invoke"
+          Name="installed"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+  </Fragment>
+
+</Wix>

@@ -14,8 +14,8 @@ permissions:
 
 jobs:
   build:
-    name: Build Binaries
-    runs-on: ubuntu-latest
+    name: Build Desktop App & MSI
+    runs-on: windows-latest
 
     steps:
       - name: Checkout Repository
@@ -30,36 +30,56 @@ jobs:
       - name: Download Dependencies
         run: go mod download
 
-      - name: Build for Windows x86 (32-bit)
-        env:
-          GOOS: windows
-          GOARCH: 386
-          CGO_ENABLED: 0
-        run: go build -v -o build/invoke-windows-386.exe
-
-      - name: Build for Windows x64 (64-bit)
+      # ── Build server binary (no console window) ──────────────────────────
+      - name: Build invoke-server.exe
         env:
           GOOS: windows
           GOARCH: amd64
           CGO_ENABLED: 0
-        run: go build -v -o build/invoke-windows-amd64.exe
+        run: go build -v -ldflags "-H windowsgui" -o build/invoke-server.exe .
 
-      - name: Upload Build Artifacts
+      # ── Build desktop launcher ────────────────────────────────────────────
+      - name: Build invoke-app.exe
+        env:
+          GOOS: windows
+          GOARCH: amd64
+          CGO_ENABLED: 0
+        run: go build -v -ldflags "-H windowsgui" -o build/invoke-app.exe .\cmd\invoke-app\
+
+      # ── Install WiX v4 toolset ─────────────────────────────────────────────
+      - name: Install WiX Toolset v4
+        run: dotnet tool install --global wix --version 4.0.5
+
+      # ── Build per-user MSI (no admin required) ────────────────────────────
+      - name: Build MSI Installer
+        run: |
+          wix build installer/invoke.wxs `
+            -arch x64 `
+            -o build/invoke-setup.msi
+
+      # ── Upload artifacts for every run ───────────────────────────────────
+      - name: Upload Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: invoke-binaries
-          path: build/
+          name: invoke-build
+          path: |
+            build/invoke-app.exe
+            build/invoke-server.exe
+            build/invoke-setup.msi
 
+      # ── Publish versioned release on tag push ─────────────────────────────
       - name: Publish Versioned Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            build/invoke-windows-386.exe
-            build/invoke-windows-amd64.exe
+            build/invoke-setup.msi
+            build/invoke-app.exe
+            build/invoke-server.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # ── Publish rolling "latest" release on every main push ───────────────
       - name: Publish Latest Dev Release
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
         uses: softprops/action-gh-release@v2
@@ -67,12 +87,15 @@ jobs:
           tag_name: latest
           name: Latest Development Build
           body: |
-            Automatically compiled binaries from the latest commit on the main branch.
-            
+            Automatically compiled from the latest commit on the main branch.
+
             Commit: ${{ github.sha }}
+
+            **Install:** Download `invoke-setup.msi` — no administrator rights required.
           prerelease: true
           files: |
-            build/invoke-windows-386.exe
-            build/invoke-windows-amd64.exe
+            build/invoke-setup.msi
+            build/invoke-app.exe
+            build/invoke-server.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

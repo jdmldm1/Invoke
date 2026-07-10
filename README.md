@@ -34,24 +34,13 @@ Open and edit files in Microsoft's Monaco editor w/ syntax highlighting, line nu
 
 > **Requirements:** Go 1.21+, Windows (CGO not required)
 
-### Option A — Server binary (console window, simplest)
-
-Builds `invoke-server.exe` — the HTTP/WebSocket server. Launches a browser tab on startup.
+Builds the desktop app — a slim launcher (`invoke-app.exe`) that starts the server (`invoke-server.exe`) in the background and wraps the UI in an embedded WebView2 window.
 
 ```powershell
-go build -o invoke-server.exe .
-.\invoke-server.exe
-```
-
-### Option B — Desktop app (no console window, recommended)
-
-Builds `invoke-app.exe` — a slim launcher that starts `invoke-server.exe` in the background and wraps the UI in an embedded WebView2 window (no browser tab needed).
-
-```powershell
-# 1. Build the server binary first
+# 1. Build the server (no console window)
 go build -ldflags "-H windowsgui" -o invoke-server.exe .
 
-# 2. Build the app launcher (must target windows/amd64 or windows/386)
+# 2. Build the app launcher
 $env:GOOS="windows"; $env:GOARCH="amd64"
 go build -ldflags "-H windowsgui" -o invoke-app.exe .\cmd\invoke-app\
 
@@ -61,14 +50,7 @@ go build -ldflags "-H windowsgui" -o invoke-app.exe .\cmd\invoke-app\
 
 `invoke-app.exe` looks for `invoke-server.exe` in the same directory and starts it on a random free port. It requires the [WebView2 Runtime](https://developer.microsoft.com/en-us/microsoft-edge/webview2/) (pre-installed on Windows 10/11). If WebView2 is not found, it falls back to opening your default browser.
 
-### Option C — Cross-compile from Linux/macOS (CI)
-
-```bash
-GOOS=windows GOARCH=amd64 CGO_ENABLED=0 go build -o build/invoke-windows-amd64.exe .
-GOOS=windows GOARCH=386   CGO_ENABLED=0 go build -o build/invoke-windows-386.exe .
-```
-
-Pre-built binaries are also available on the [Releases](../../releases) page.
+A pre-built MSI installer (no administrator rights required) is available on the [Releases](../../releases) page.
 
 ---
 
