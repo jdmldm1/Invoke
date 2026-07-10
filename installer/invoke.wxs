@@ -13,6 +13,9 @@
     Scope="perUser"
     Compressed="yes">
 
+    <!-- Embed the cabinet directly inside the MSI (no external .cab file) -->
+    <MediaTemplate EmbedCab="yes" />
+
     <!-- Allow silent upgrades; remove older versions automatically -->
     <MajorUpgrade
       DowngradeErrorMessage="A newer version of Invoke is already installed."
