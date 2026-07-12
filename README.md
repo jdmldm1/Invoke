@@ -1,23 +1,49 @@
-# PowerTerm
+# Invoke
 
-An enhanced terminal emulator, embedded code editor, and git overview served from a single, self-contained binary. No internet required.
+An enhanced, air-gapped terminal workspace with an embedded editor and developer tools served from a single binary.
 
-## Key Bindings
-- `Ctrl + \` : Toggle file sidebar
-- `Ctrl + Shift + P` : Command palette
-- `Ctrl + Shift + K` : Scratchpad
-- `Ctrl + Shift + T / W` : Tab open / close
-- `Ctrl + Shift + D / S` : Split / Stack panes
+![Invoke terminal](docs/screenshots/terminal.png)
 
-## Inside PowerTerm
-- `pt edit <file>` : Open Monaco editor
-- `pt diff <file>` : Show git diff against HEAD
-- `pt git` : Graphical Git status & diff
-- `pt ports` : View and release listening ports
-- `pt ask <q>` / `pt explain <err>` : Native Ollama helper
+---
 
-## Build & Run
+## Subcommands & Features
+
+### Editor & Diffs
+* `pt edit <file>` : Open file in Monaco editor
+* `pt diff <file>` : Side-by-side diff vs Git `HEAD`
+
+![Monaco editor](docs/screenshots/editor.png)
+![Diff vs HEAD](docs/screenshots/diff.png)
+
+### Source Control
+* `pt git` : Visual Git status and side-by-side branch review
+
+![Git delta view](docs/screenshots/gitview.png)
+
+### Port Utility
+* `pt ports` : List listening ports and kill associated processes
+
+![Port manager](docs/screenshots/ports.png)
+
+---
+
+## Critical Information
+
+### Key Bindings
+* `Ctrl + \` : Toggle file sidebar
+* `Ctrl + Shift + P` : Command search palette
+* `Ctrl + Shift + K` : Workspace scratchpad pane
+* `Ctrl + Shift + T / W` : Open / Close tab
+* `Ctrl + Shift + D / S` : Split / Stack panes
+
+### Build & Run
 ```powershell
-go build -ldflags "-H windowsgui" -o powerterm.exe .
-.\powerterm.exe
+# 1. Build server
+go build -ldflags "-H windowsgui" -o invoke-server.exe .
+
+# 2. Build app launcher
+go build -ldflags "-H windowsgui" -o invoke-app.exe .\cmd\invoke-app\
+
+# 3. Run
+.\invoke-app.exe
 ```
