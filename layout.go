@@ -10,19 +10,16 @@ import (
 	"time"
 )
 
-// LayoutPane describes one terminal pane in a layout.
 type LayoutPane struct {
 	CWD string `json:"cwd"`
 }
 
-// LayoutTab describes one tab in a saved layout.
 type LayoutTab struct {
 	Name  string       `json:"name"`
 	Panes []LayoutPane `json:"panes"`
-	Split string       `json:"split,omitempty"` // "row" | "col" | ""
+	Split string       `json:"split,omitempty"`
 }
 
-// Layout is one complete named workspace snapshot.
 type Layout struct {
 	Name      string      `json:"name"`
 	SavedAt   time.Time   `json:"saved_at"`
@@ -66,7 +63,6 @@ func saveLayouts(layouts []Layout) {
 	}
 }
 
-// handleLayout handles GET/POST/DELETE for named layouts.
 func handleLayout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")

@@ -20,7 +20,6 @@ type gitDeltaFile struct {
 	Lang     string `json:"lang"`
 }
 
-// langForExt maps a file extension to a Monaco language id.
 func langForExt(ext string) string {
 	switch strings.ToLower(ext) {
 	case ".go":
@@ -78,8 +77,6 @@ func langForExt(ext string) string {
 	}
 }
 
-// serveGitOverview opens a browser "source control" view of the working tree:
-// a sidebar of changed files and a Monaco diff editor (committed vs working).
 func serveGitOverview(dir string) {
 	status := getGitStatus(dir)
 	if !status.IsRepo {
@@ -412,8 +409,6 @@ const gitOverviewTemplate = `
 </html>
 `
 
-// handleGitStage stages a file relative to the given dir.
-// POST /git/stage?dir=...&file=...
 func handleGitStage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	dir := r.URL.Query().Get("dir")
@@ -432,8 +427,6 @@ func handleGitStage(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
-// handleGitUnstage un-stages a file.
-// POST /git/unstage?dir=...&file=...
 func handleGitUnstage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	dir := r.URL.Query().Get("dir")
@@ -452,8 +445,6 @@ func handleGitUnstage(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
-// handleGitCommit commits staged changes.
-// POST /git/commit  body: {"dir":"...","message":"..."}
 func handleGitCommit(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	var body struct {

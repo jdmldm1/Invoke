@@ -12,7 +12,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Control-channel connections receive "open tab" pushes from the server.
 var (
 	ctrlMu    sync.Mutex
 	ctrlConns = map[*websocket.Conn]bool{}
@@ -46,7 +45,6 @@ func handleControlWS(w http.ResponseWriter, r *http.Request) {
 	conn.Close()
 }
 
-// handleOpenRequest is POSTed by `pt diff`/`pt edit` running inside a pane.
 func handleOpenRequest(w http.ResponseWriter, r *http.Request) {
 	var req struct{ Type, File string }
 	if json.NewDecoder(r.Body).Decode(&req) != nil || req.File == "" {
@@ -109,9 +107,8 @@ func fill(tmpl string, kv map[string]string) string {
 	return tmpl
 }
 
-// monacoDiffHTML renders a read-only side-by-side diff page (HEAD vs working).
 func monacoDiffHTML(name, ext, original, modified string) string {
-	o, _ := json.Marshal(original) // json.Marshal HTML-escapes <,>,& so embedding in <script> is safe
+	o, _ := json.Marshal(original)
 	m, _ := json.Marshal(modified)
 	l, _ := json.Marshal(langForExt(ext))
 	return fill(monacoDiffTmpl, map[string]string{
@@ -122,7 +119,6 @@ func monacoDiffHTML(name, ext, original, modified string) string {
 	})
 }
 
-// monacoEditHTML renders an editable Monaco page; Ctrl+S saves back to absPath.
 func monacoEditHTML(name, ext, absPath, content string) string {
 	c, _ := json.Marshal(content)
 	l, _ := json.Marshal(langForExt(ext))
@@ -462,10 +458,128 @@ const monacoEditTmpl = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>
            }
          });
        }
-       registerAIHoverProvider();
-     });
+        registerAIHoverProvider();
+        registerAIInlineCompletionsProvider();
+        registerAICompletionItemProvider();
+      });
 
- });
+  });
+
+  function registerAICompletionItemProvider() {
+      monaco.languages.registerCompletionItemProvider(lang, {
+          triggerCharacters: ['.', ' ', '(', '{', '='],
+          provideCompletionItems: function(model, position, context, token) {
+              return new Promise((resolve) => {
+                  const timer = setTimeout(() => {
+                      if (token.isCancellationRequested) {
+                          resolve(null);
+                          return;
+                      }
+                      const textBefore = model.getValueInRange({
+                          startLineNumber: Math.max(1, position.lineNumber - 30),
+                          startColumn: 1,
+                          endLineNumber: position.lineNumber,
+                          endColumn: position.column
+                      });
+                      if (textBefore.trim().length < 5) {
+                          resolve(null);
+                          return;
+                      }
+                      fetch('/ai-editor-complete', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                              before: textBefore,
+                              lang: lang
+                          })
+                      })
+                      .then(r => r.json())
+                      .then(data => {
+                          if (token.isCancellationRequested) {
+                              resolve(null);
+                              return;
+                          }
+                          if (data && data.completion && data.completion.trim()) {
+                              resolve({
+                                  suggestions: [{
+                                      label: '🤖 AI: ' + data.completion.split('\n')[0],
+                                      kind: monaco.languages.CompletionItemKind.Snippet,
+                                      insertText: data.completion,
+                                      detail: 'AI Generated Completion',
+                                      documentation: data.completion,
+                                      range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
+                                  }]
+                              });
+                          } else {
+                              resolve(null);
+                          }
+                      })
+                      .catch(() => resolve(null));
+                  }, 500);
+                  token.onCancellationRequested(() => {
+                      clearTimeout(timer);
+                      resolve(null);
+                  });
+              });
+          }
+      });
+  }
+
+  function registerAIInlineCompletionsProvider() {
+      monaco.languages.registerInlineCompletionsProvider(lang, {
+          provideInlineCompletions: function(model, position, context, token) {
+              return new Promise((resolve) => {
+                  const timer = setTimeout(() => {
+                      if (token.isCancellationRequested) {
+                          resolve(null);
+                          return;
+                      }
+                      const textBefore = model.getValueInRange({
+                          startLineNumber: Math.max(1, position.lineNumber - 50),
+                          startColumn: 1,
+                          endLineNumber: position.lineNumber,
+                          endColumn: position.column
+                      });
+                      if (textBefore.trim().length < 5) {
+                          resolve(null);
+                          return;
+                      }
+                      fetch('/ai-editor-complete', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                              before: textBefore,
+                              lang: lang
+                          })
+                      })
+                      .then(r => r.json())
+                      .then(data => {
+                          if (token.isCancellationRequested) {
+                              resolve(null);
+                              return;
+                          }
+                          if (data && data.completion) {
+                              resolve({
+                                  items: [{
+                                      insertText: data.completion,
+                                      range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
+                                  }]
+                              });
+                          } else {
+                              resolve(null);
+                          }
+                      })
+                      .catch(() => resolve(null));
+                  }, 800);
+                  token.onCancellationRequested(() => {
+                      clearTimeout(timer);
+                      resolve(null);
+                  });
+              });
+          },
+          freeInlineCompletions: function() {}
+      });
+  }
 
  function registerAIHoverProvider() {
      monaco.languages.getLanguages().forEach(function(lang) {

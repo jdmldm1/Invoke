@@ -29,7 +29,6 @@ func main() {
 	case "term", "window":
 		serveTerminalWindow()
 	case "shell":
-		// Opt-in: the old behavior — an enhanced PowerShell session in this console.
 		runTerminalMode()
 	case "git":
 		dir, err := os.Getwd()
@@ -99,9 +98,6 @@ func main() {
 	}
 }
 
-// runTerminalMode spawns an enhanced PowerShell session with invoke.ps1 pre-loaded.
-// It passes the absolute exe path via $env:INVOKE_EXE so that invoke.ps1 can
-// locate the binary regardless of where the exe lives.
 func runTerminalMode() {
 	exePath, err := os.Executable()
 	if err != nil {
@@ -111,7 +107,6 @@ func runTerminalMode() {
 	exeDir := filepath.Dir(exePath)
 	scriptPath := filepath.Join(exeDir, "invoke.ps1")
 
-	// Escape single quotes in paths for PowerShell.
 	escapedExe := strings.ReplaceAll(exePath, "'", "''")
 	escapedScript := strings.ReplaceAll(scriptPath, "'", "''")
 
@@ -122,8 +117,6 @@ func runTerminalMode() {
 		escapedExe, escapedScript, escapedScript,
 	)
 
-	// Prefer PowerShell 7 (pwsh) for its superior PSReadLine/predictions,
-	// falling back to Windows PowerShell 5.1.
 	shell := "powershell.exe"
 	if p, err := exec.LookPath("pwsh.exe"); err == nil {
 		shell = p
@@ -138,9 +131,6 @@ func runTerminalMode() {
 	_ = cmd.Run()
 }
 
-// generateCommandOnly prints ONLY the AI-generated command to stdout, with no
-// decoration or side effects. It backs the inline Ctrl+G keybinding, which
-// replaces the current command line with the generated command.
 func generateCommandOnly(query string) {
 	config := loadConfig()
 	host := cleanHost(config.OllamaHost)
@@ -155,8 +145,6 @@ func generateCommandOnly(query string) {
 		"stream": false,
 	})
 
-	// Fast-fail the connection (2s dial) so an unreachable host doesn't freeze
-	// the interactive Ctrl+G keybinding, while still allowing time to generate.
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
@@ -165,7 +153,7 @@ func generateCommandOnly(query string) {
 	}
 	resp, err := client.Post(host+"/api/generate", "application/json", bytes.NewBuffer(reqBody))
 	if err != nil {
-		return // Stay silent so the keybinding leaves the line untouched.
+		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
@@ -247,13 +235,12 @@ func executeAIDo(query string) {
 		return
 	}
 
-	// Write to action json for native shell execution
 	home, err := os.UserHomeDir()
 	if err == nil {
 		actionPath := filepath.Join(home, ".powerterm_action.json")
 		actionData := map[string]string{
-			"cmd": cmdText,
-			"confirm": "true", // Tell PS script to prompt before executing
+			"cmd":     cmdText,
+			"confirm": "true",
 		}
 		file, err := os.Create(actionPath)
 		if err == nil {
@@ -263,8 +250,6 @@ func executeAIDo(query string) {
 	}
 }
 
-// askAI streams a general-purpose answer from the configured model. Unlike
-// `do`/`gen` (which generate commands), this is a plain Q&A assistant.
 func askAI(question string) {
 	config := loadConfig()
 	host := cleanHost(config.OllamaHost)
@@ -282,7 +267,6 @@ func askAI(question string) {
 		"stream": true,
 	})
 
-	// Fast-fail the connection but allow a long stream for the full answer.
 	client := &http.Client{
 		Transport: &http.Transport{
 			DialContext: (&net.Dialer{Timeout: 3 * time.Second}).DialContext,
@@ -331,7 +315,7 @@ func askAI(question string) {
 func explainError(errorText string) {
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("#a855f7")).Bold(true).Render("\nQuerying AI Explainer..."))
 	fmt.Println(lipgloss.NewStyle().Foreground(lipgloss.Color("#6b7280")).Render("Contacting Gemma4 at Shiloh..."))
-	
+
 	config := loadConfig()
 	host := cleanHost(config.OllamaHost)
 	model := config.OllamaModel
@@ -414,16 +398,14 @@ func getHoverInfo(targetCmd string) {
 		return
 	}
 
-	// Format as a hover popup box
 	boxStyle := lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		BorderForeground(lipgloss.Color("#38bdf8")).
 		Padding(0, 1).
 		Foreground(lipgloss.Color("#f8fafc"))
-	
+
 	titleStyle := lipgloss.NewStyle().Foreground(lipgloss.Color("#34d399")).Bold(true)
-	
-	content := titleStyle.Render("Command Info: " + targetCmd) + "\n\n" + strings.TrimSpace(respData.Response)
+
+	content := titleStyle.Render("Command Info: "+targetCmd) + "\n\n" + strings.TrimSpace(respData.Response)
 	fmt.Println("\n" + boxStyle.Render(content) + "\n")
 }
-

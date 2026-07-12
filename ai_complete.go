@@ -12,10 +12,6 @@ import (
 	"time"
 )
 
-
-// handleAIComplete returns a short AI-generated shell command completion.
-// POST /ai-complete  body: {"line":"...", "cwd":"...", "os":"windows"}
-// Response: {"completion":"..."} or {"completion":""} on timeout/error.
 func handleAIComplete(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -80,10 +76,8 @@ func handleAIComplete(w http.ResponseWriter, r *http.Request) {
 	}
 
 	completion := strings.TrimSpace(ollamaResp.Message.Content)
-	// Strip any surrounding quotes or code fences the model might add
 	completion = strings.TrimPrefix(completion, "`")
 	completion = strings.TrimSuffix(completion, "`")
-	// Only return single-line completions (no multi-line)
 	if idx := strings.IndexByte(completion, '\n'); idx >= 0 {
 		completion = completion[:idx]
 	}
@@ -91,9 +85,6 @@ func handleAIComplete(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"completion": completion})
 }
 
-// handleAITranslate translates a natural language instruction into a raw shell command.
-// POST /ai-translate  body: {"query":"...", "cwd":"...", "os":"windows"}
-// Response: {"command":"..."}
 func handleAITranslate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -159,15 +150,13 @@ func handleAITranslate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cmd := strings.TrimSpace(ollamaResp.Message.Content)
-	// Strip any surrounding quotes or markdown code block markers
 	cmd = strings.TrimPrefix(cmd, "```powershell")
 	cmd = strings.TrimPrefix(cmd, "```bash")
 	cmd = strings.TrimPrefix(cmd, "```")
 	cmd = strings.TrimSuffix(cmd, "```")
 	cmd = strings.Trim(cmd, "`'\"")
 	cmd = strings.TrimSpace(cmd)
-	
-	// Single line only
+
 	if idx := strings.IndexByte(cmd, '\n'); idx >= 0 {
 		cmd = cmd[:idx]
 	}
@@ -175,9 +164,6 @@ func handleAITranslate(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"command": cmd})
 }
 
-// handleAIEditCode handles modifying a selected block of code.
-// POST /ai-edit-code body: {"code":"...", "instruction":"...", "lang":"..."}
-// Response: {"code":"..."}
 func handleAIEditCode(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -246,9 +232,6 @@ func handleAIEditCode(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"code": resCode})
 }
 
-// handleAIScaffoldScript generates a complete script based on description.
-// POST /ai-scaffold-script body: {"desc":"...", "lang":"...", "name":"..."}
-// Response: {"success":true, "file":"..."}
 func handleAIScaffoldScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -296,7 +279,6 @@ func handleAIScaffoldScript(w http.ResponseWriter, r *http.Request) {
 		ext = ".sh"
 	}
 
-	// Sanitize name
 	safeName := strings.Map(func(r rune) rune {
 		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' || r == '-' {
 			return r
@@ -307,7 +289,6 @@ func handleAIScaffoldScript(w http.ResponseWriter, r *http.Request) {
 		safeName = "scaffold"
 	}
 
-	// Target file path inside scripts/ directory of current working directory
 	os.MkdirAll("scripts", 0755)
 	targetFile := filepath.Join("scripts", safeName+ext)
 
@@ -356,7 +337,6 @@ func handleAIScaffoldScript(w http.ResponseWriter, r *http.Request) {
 	scriptCode = strings.Trim(scriptCode, "`")
 	scriptCode = strings.TrimSpace(scriptCode) + "\n"
 
-	// Write to file
 	absPath, _ := filepath.Abs(targetFile)
 	if err := os.WriteFile(absPath, []byte(scriptCode), 0755); err != nil {
 		http.Error(w, "File write error: "+err.Error(), 500)
@@ -377,7 +357,6 @@ type AIExplainHoverResponse struct {
 	Explanation string `json:"explanation"`
 }
 
-// handleAIExplainHover provides a concise description of a symbol on hover.
 func handleAIExplainHover(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
@@ -432,5 +411,68 @@ func handleAIExplainHover(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(AIExplainHoverResponse{Explanation: explanation})
 }
 
+func handleAIEditorComplete(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"POST required"}`, 405)
+		return
+	}
 
+	var req struct {
+		Before string `json:"before"`
+		Lang   string `json:"lang"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Before) == "" {
+		json.NewEncoder(w).Encode(map[string]string{"completion": ""})
+		return
+	}
+
+	cfg := loadConfig()
+
+	systemPrompt := "You are an inline code completion assistant. " +
+		"Complete the code immediately following the cursor in a " + req.Lang + " file. " +
+		"Return ONLY the suffix characters or lines that should complete the current line or block. " +
+		"Do NOT write markdown blocks, do NOT write backticks, do NOT write explanations. " +
+		"If there is nothing sensible to add, return an empty string."
+
+	payload := map[string]interface{}{
+		"model": cfg.OllamaModel,
+		"messages": []map[string]string{
+			{"role": "system", "content": systemPrompt},
+			{"role": "user", "content": req.Before},
+		},
+		"stream":      false,
+		"num_predict": 60,
+		"temperature": 0.1,
+	}
+
+	body, _ := json.Marshal(payload)
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	resp, err := client.Post(cfg.OllamaHost+"/api/chat", "application/json", bytes.NewReader(body))
+	if err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"completion": ""})
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	var ollamaResp struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(respBody, &ollamaResp); err != nil {
+		json.NewEncoder(w).Encode(map[string]string{"completion": ""})
+		return
+	}
+
+	completion := ollamaResp.Message.Content
+	completion = strings.TrimPrefix(completion, "```" + req.Lang)
+	completion = strings.TrimPrefix(completion, "```")
+	completion = strings.TrimSuffix(completion, "```")
+	completion = strings.Trim(completion, "`")
+
+	json.NewEncoder(w).Encode(map[string]string{"completion": completion})
+}
 

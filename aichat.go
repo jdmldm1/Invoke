@@ -17,8 +17,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// ---- file browser (for picking context) -----------------------------------
-
 func handleFS(w http.ResponseWriter, r *http.Request) {
 	dir := r.URL.Query().Get("dir")
 	if dir == "" {
@@ -60,8 +58,6 @@ func handleFS(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(out)
 }
-
-// ---- chat over websocket ---------------------------------------------------
 
 func buildChatContext(paths []string) string {
 	var b strings.Builder
@@ -161,7 +157,7 @@ type wsMessage struct {
 	Question  string              `json:"question"`
 	Paths     []string            `json:"paths"`
 	History   []map[string]string `json:"history"`
-	Status    string              `json:"status"` // "approved" or "rejected"
+	Status    string              `json:"status"`
 	Command   string              `json:"command"`
 	UseJarvis bool                `json:"use_jarvis"`
 }
@@ -175,7 +171,6 @@ func handleChatWS(w http.ResponseWriter, r *http.Request) {
 
 	responseChan := make(chan string, 1)
 
-	// Goroutine to read messages from the client
 	msgChan := make(chan wsMessage)
 	go func() {
 		for {
@@ -186,7 +181,6 @@ func handleChatWS(w http.ResponseWriter, r *http.Request) {
 			}
 			var m wsMessage
 			if err := json.Unmarshal(data, &m); err == nil {
-				// If no Type is specified, default to "question" (compatibility)
 				if m.Type == "" {
 					m.Type = "question"
 				}
@@ -209,7 +203,6 @@ func handleChatWS(w http.ResponseWriter, r *http.Request) {
 
 			switch msg.Type {
 			case "tool_response":
-				// Forward status to the running agent
 				select {
 				case responseChan <- msg.Status:
 				default:
@@ -223,7 +216,6 @@ func handleChatWS(w http.ResponseWriter, r *http.Request) {
 				ctx, currentCancel = context.WithCancel(context.Background())
 
 				go func(c context.Context, cmd string) {
-					// Directly trigger command execution tool with approval card!
 					reqPayload, _ := json.Marshal(map[string]string{
 						"tool": "execute_command",
 						"args": cmd,
@@ -345,7 +337,6 @@ func streamChatAgent(ctx context.Context, conn *websocket.Conn, question string,
 		default:
 		}
 
-		// Signal to frontend that a new turn/step is starting
 		sendChat(conn, "step_start", "")
 
 		var promptBuilder strings.Builder
@@ -414,7 +405,6 @@ func streamChatAgent(ctx context.Context, conn *websocket.Conn, question string,
 
 		fullText := fullResponse.String()
 
-		// Auto-close open tags at the end of the text in case the model stopped prematurely
 		if strings.Contains(fullText, "<execute_command>") && !strings.Contains(fullText, "</execute_command>") {
 			fullText += "</execute_command>"
 		}
@@ -425,13 +415,11 @@ func streamChatAgent(ctx context.Context, conn *websocket.Conn, question string,
 			fullText += "</read_file>"
 		}
 
-		// 1. Process execute_command tool
 		if startIdx := strings.Index(fullText, "<execute_command>"); startIdx >= 0 {
 			endIdx := strings.Index(fullText, "</execute_command>")
 			if endIdx > startIdx {
 				cmd := strings.TrimSpace(fullText[startIdx+len("<execute_command>") : endIdx])
-				
-				// Request permission
+
 				reqPayload, _ := json.Marshal(map[string]string{
 					"tool": "execute_command",
 					"args": cmd,
@@ -449,8 +437,7 @@ func streamChatAgent(ctx context.Context, conn *websocket.Conn, question string,
 						} else {
 							result = output
 						}
-						
-						// Send execution result back to frontend to render
+
 						sendChat(conn, "tool_result", result)
 
 						activeHistory = append(activeHistory, map[string]string{"role": "assistant", "content": fullText})
@@ -467,7 +454,6 @@ func streamChatAgent(ctx context.Context, conn *websocket.Conn, question string,
 			}
 		}
 
-		// 2. Process write_file tool
 		if startIdx := strings.Index(fullText, "<write_file"); startIdx >= 0 {
 			endIdx := strings.Index(fullText, "</write_file>")
 			if endIdx > startIdx {
@@ -495,7 +481,7 @@ func streamChatAgent(ctx context.Context, conn *websocket.Conn, question string,
 							} else {
 								result = fmt.Sprintf("File '%s' successfully written/modified.", path)
 							}
-							
+
 							sendChat(conn, "tool_result", result)
 
 							activeHistory = append(activeHistory, map[string]string{"role": "assistant", "content": fullText})
@@ -513,7 +499,6 @@ func streamChatAgent(ctx context.Context, conn *websocket.Conn, question string,
 			}
 		}
 
-		// 3. Process read_file tool
 		if startIdx := strings.Index(fullText, "<read_file>"); startIdx >= 0 {
 			endIdx := strings.Index(fullText, "</read_file>")
 			if endIdx > startIdx {
@@ -536,7 +521,7 @@ func streamChatAgent(ctx context.Context, conn *websocket.Conn, question string,
 						} else {
 							result = content
 						}
-						
+
 						sendChat(conn, "tool_result", result)
 
 						activeHistory = append(activeHistory, map[string]string{"role": "assistant", "content": fullText})
@@ -553,10 +538,8 @@ func streamChatAgent(ctx context.Context, conn *websocket.Conn, question string,
 			}
 		}
 
-		// No more tools called, generation is complete!
 		activeHistory = append(activeHistory, map[string]string{"role": "assistant", "content": fullText})
-		
-		// Send updated history to client to sync state
+
 		histBytes, _ := json.Marshal(activeHistory)
 		sendChat(conn, "sync_history", string(histBytes))
 
@@ -730,7 +713,6 @@ const chatPageHTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI
       if (!text) return '';
       let html = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       
-      // If the text contains an odd number of triple backticks, temporarily close the block for rendering
       let closedText = html;
       const ticks = (html.match(/\x60{3}/g) || []).length;
       if (ticks % 2 !== 0) {
@@ -805,7 +787,6 @@ const chatPageHTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI
       closedText = closedText.replace(/\n/g, '<br>');
       
       for (let i = 0; i < codeBlocks.length; i++) {
-        // Use a function as second argument to avoid special treatment of $ signs
         closedText = closedText.replace('___CODE_BLOCK_PLACEHOLDER_' + i + '___', () => codeBlocks[i]);
       }
       return closedText;
@@ -844,10 +825,8 @@ const chatPageHTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI
         var m; try{ m=JSON.parse(e.data); }catch(_){ return; }
         if(m.type==='step_start'){
           if(curBody && curBody.classList.contains('thinking')){
-            // Already showing thinking indicator, just reset response text buffer
             curResponseText='';
           } else {
-            // Start a new turn with an active thinking loader
             curBody=addMsg('assistant','Thinking...');
             curBody.classList.add('thinking');
             curResponseText='';
@@ -861,7 +840,6 @@ const chatPageHTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI
             }
             curResponseText+=m.text;
             
-            // Clean XML tags from display copy so tags don't clutter chat markdown
             var displayText = curResponseText
               .replace(/<execute_command>[^]*?<\/execute_command>/g, '')
               .replace(/<write_file[^]*?>[^]*?<\/write_file>/g, '')
@@ -1017,7 +995,6 @@ const chatPageHTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI
   function send(){
     var text=q.value.trim(); if(!text||streaming) return;
     
-    // Process local slash commands
     if (text.startsWith('/')) {
       var parts = text.split(' ');
       var cmd = parts[0].toLowerCase();
@@ -1079,13 +1056,11 @@ const chatPageHTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI
 
     if(!ws||ws.readyState!==1){ addMsg('assistant','[connecting... try again in a moment]'); return; }
     
-    // Check if it is a '/run' command
     if (text.startsWith('/run ')) {
       var cmdToRun = text.substring(5).trim();
       addMsg('user', text);
       q.value=''; streaming=true; sendBtn.disabled=true;
       
-      // Render initial thinking bubble for the step
       curBody=addMsg('assistant','Thinking...');
       curBody.classList.add('thinking');
       
@@ -1121,7 +1096,7 @@ const chatPageHTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI
   ];
   let chatSuggestIdx = 0;
   let matchingChatSuggests = [];
-  let chatSuggestMode = ''; // '/' or '@'
+  let chatSuggestMode = '';
   let chatSuggestQuery = '';
 
   function showChatSuggests() {
@@ -1277,7 +1252,6 @@ const chatPageHTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI
       return;
     }
     
-    // Fetch and show
     fetch('/prompts')
       .then(r => r.json())
       .then(prompts => {
@@ -1293,7 +1267,6 @@ const chatPageHTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI
             item.onclick = function() {
               hidePromptPopup();
               let tmpl = p.template;
-              // Extract {placeholders}
               const regex = /\{([a-zA-Z0-9_]+)\}/g;
               let match;
               const vars = [];
@@ -1347,7 +1320,6 @@ const chatPageHTML = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>AI
           addMsg(h.role, h.content);
         });
         
-        // Prefill only after history is loaded to prevent race conditions
         if(prefill){
           q.value=prefill;
           setTimeout(function(){ if(ws&&ws.readyState===1) send(); else setTimeout(send,800); }, 100);

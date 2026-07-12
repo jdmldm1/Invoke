@@ -20,13 +20,14 @@ type PromptTemplate struct {
 }
 
 type ConfigData struct {
-	OllamaHost  string            `json:"ollama_host"`
-	OllamaModel string            `json:"ollama_model"`
-	History     []string          `json:"history"`
-	Snippets    []Snippet         `json:"snippets"`
-	Prompts     []PromptTemplate  `json:"prompts"`
-	Aliases     map[string]string `json:"aliases"`
-	JarvisPath  string            `json:"jarvis_path"`
+	OllamaHost   string            `json:"ollama_host"`
+	OllamaModel  string            `json:"ollama_model"`
+	History      []string          `json:"history"`
+	Snippets     []Snippet         `json:"snippets"`
+	Prompts      []PromptTemplate  `json:"prompts"`
+	Aliases      map[string]string `json:"aliases"`
+	JarvisPath   string            `json:"jarvis_path"`
+	SSHEndpoints []SSHEndpoint     `json:"ssh_endpoints"`
 }
 
 var (
@@ -46,7 +47,6 @@ func loadConfig() ConfigData {
 	configMu.Lock()
 	defer configMu.Unlock()
 
-	// Default config
 	defaultConfig := ConfigData{
 		OllamaHost:  "http://shiloh:11434",
 		OllamaModel: "gemma4:e4b",
@@ -100,12 +100,9 @@ func loadConfig() ConfigData {
 	}
 	defer file.Close()
 
-	// To handle legacy configurations (where Bookmarks was []string),
-	// we will decode into a generic interface first, then check.
 	var raw map[string]interface{}
 	_ = json.NewDecoder(file).Decode(&raw)
 
-	// Build config from raw map
 	var data ConfigData
 
 	if raw != nil {
@@ -121,9 +118,6 @@ func loadConfig() ConfigData {
 			data.OllamaModel = defaultConfig.OllamaModel
 		}
 
-
-
-		// Handle history
 		if histRaw, ok := raw["history"].([]interface{}); ok {
 			for _, h := range histRaw {
 				if hStr, ok := h.(string); ok {
@@ -132,7 +126,6 @@ func loadConfig() ConfigData {
 			}
 		}
 
-		// Handle snippets
 		if snipRaw, ok := raw["snippets"].([]interface{}); ok {
 			for _, s := range snipRaw {
 				if sMap, ok := s.(map[string]interface{}); ok {
@@ -147,7 +140,7 @@ func loadConfig() ConfigData {
 		if len(data.Snippets) == 0 {
 			data.Snippets = defaultConfig.Snippets
 		}
-		// Handle prompts
+
 		if promptRaw, ok := raw["prompts"].([]interface{}); ok {
 			for _, p := range promptRaw {
 				if pMap, ok := p.(map[string]interface{}); ok {
@@ -163,7 +156,6 @@ func loadConfig() ConfigData {
 			data.Prompts = defaultConfig.Prompts
 		}
 
-		// Handle aliases
 		data.Aliases = make(map[string]string)
 		if aliasRaw, ok := raw["aliases"].(map[string]interface{}); ok {
 			for k, v := range aliasRaw {
@@ -176,9 +168,30 @@ func loadConfig() ConfigData {
 			data.Aliases = defaultConfig.Aliases
 		}
 
-		// Handle jarvis_path
 		if jarvis, ok := raw["jarvis_path"].(string); ok {
 			data.JarvisPath = jarvis
+		}
+
+		if epRaw, ok := raw["ssh_endpoints"].([]interface{}); ok {
+			for _, e := range epRaw {
+				if eMap, ok := e.(map[string]interface{}); ok {
+					var ep SSHEndpoint
+					ep.Name, _ = eMap["name"].(string)
+					ep.Host, _ = eMap["host"].(string)
+					ep.User, _ = eMap["user"].(string)
+					if p, ok := eMap["port"].(float64); ok {
+						ep.Port = int(p)
+					}
+					ep.UseKey, _ = eMap["use_key"].(bool)
+					ep.EncPassword, _ = eMap["enc_password"].(string)
+					if ep.Name != "" && ep.Host != "" {
+						data.SSHEndpoints = append(data.SSHEndpoints, ep)
+					}
+				}
+			}
+		}
+		if data.SSHEndpoints == nil {
+			data.SSHEndpoints = []SSHEndpoint{}
 		}
 	} else {
 		data = defaultConfig

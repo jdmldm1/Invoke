@@ -84,7 +84,7 @@ const converterPageHTML = `<!DOCTYPE html>
         <polyline points="8 21 3 16 8 11"></polyline>
         <line x1="3" y1="16" x2="15" y2="16"></line>
       </svg>
-      AI Script & Command Translator
+      AI Script &amp; Command Translator
     </h2>
     <p style="font-size:13px; color:var(--muted); margin-bottom:20px; margin-top:0;">Translate commands and shell scripts between Linux (Bash/Sh) and Windows (PowerShell/CMD) instantly.</p>
     

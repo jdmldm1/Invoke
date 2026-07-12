@@ -66,7 +66,127 @@ const editorTemplate = `
             });
 
             registerAIHoverProvider();
+            registerAIInlineCompletionsProvider();
+            registerAICompletionItemProvider();
         });
+
+        function registerAICompletionItemProvider() {
+            const langId = getLanguage('{{.Ext}}');
+            monaco.languages.registerCompletionItemProvider(langId, {
+                triggerCharacters: ['.', ' ', '(', '{', '='],
+                provideCompletionItems: function(model, position, context, token) {
+                    return new Promise((resolve) => {
+                        const timer = setTimeout(() => {
+                            if (token.isCancellationRequested) {
+                                resolve(null);
+                                return;
+                            }
+                            const textBefore = model.getValueInRange({
+                                startLineNumber: Math.max(1, position.lineNumber - 30),
+                                startColumn: 1,
+                                endLineNumber: position.lineNumber,
+                                endColumn: position.column
+                            });
+                            if (textBefore.trim().length < 5) {
+                                resolve(null);
+                                return;
+                            }
+                            fetch('/ai-editor-complete', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    before: textBefore,
+                                    lang: langId
+                                })
+                            })
+                            .then(r => r.json())
+                            .then(data => {
+                                if (token.isCancellationRequested) {
+                                    resolve(null);
+                                    return;
+                                }
+                                if (data && data.completion && data.completion.trim()) {
+                                    resolve({
+                                        suggestions: [{
+                                            label: '🤖 AI: ' + data.completion.split('\n')[0],
+                                            kind: monaco.languages.CompletionItemKind.Snippet,
+                                            insertText: data.completion,
+                                            detail: 'AI Generated Completion',
+                                            documentation: data.completion,
+                                            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
+                                        }]
+                                    });
+                                } else {
+                                    resolve(null);
+                                }
+                            })
+                            .catch(() => resolve(null));
+                        }, 500);
+                        token.onCancellationRequested(() => {
+                            clearTimeout(timer);
+                            resolve(null);
+                        });
+                    });
+                }
+            });
+        }
+
+        function registerAIInlineCompletionsProvider() {
+            const langId = getLanguage('{{.Ext}}');
+            monaco.languages.registerInlineCompletionsProvider(langId, {
+                provideInlineCompletions: function(model, position, context, token) {
+                    return new Promise((resolve) => {
+                        const timer = setTimeout(() => {
+                            if (token.isCancellationRequested) {
+                                resolve(null);
+                                return;
+                            }
+                            const textBefore = model.getValueInRange({
+                                startLineNumber: Math.max(1, position.lineNumber - 50),
+                                startColumn: 1,
+                                endLineNumber: position.lineNumber,
+                                endColumn: position.column
+                            });
+                            if (textBefore.trim().length < 5) {
+                                resolve(null);
+                                return;
+                            }
+                            fetch('/ai-editor-complete', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    before: textBefore,
+                                    lang: langId
+                                })
+                            })
+                            .then(r => r.json())
+                            .then(data => {
+                                if (token.isCancellationRequested) {
+                                    resolve(null);
+                                    return;
+                                }
+                                if (data && data.completion) {
+                                    resolve({
+                                        items: [{
+                                            insertText: data.completion,
+                                            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
+                                        }]
+                                    });
+                                } else {
+                                    resolve(null);
+                                }
+                            })
+                            .catch(() => resolve(null));
+                        }, 800);
+                        token.onCancellationRequested(() => {
+                            clearTimeout(timer);
+                            resolve(null);
+                        });
+                    });
+                },
+                freeInlineCompletions: function() {}
+            });
+        }
 
         function getLanguage(ext) {
             switch(ext.toLowerCase()) {
@@ -324,9 +444,6 @@ const diffTemplate = `
 </html>
 `
 
-// serveMonacoDiff opens a Monaco side-by-side diff editor comparing the file's
-// committed (HEAD) version against the current working copy. The working side
-// is editable and Ctrl+S saves it back to disk.
 func serveMonacoDiff(filePath string) {
 	absPath, err := filepath.Abs(filePath)
 	if err != nil {
@@ -456,7 +573,6 @@ func serveMonacoEditor(filePath string) {
 
 	content, err := os.ReadFile(absPath)
 	if err != nil {
-		// Start empty if not exists
 		content = []byte("")
 	}
 
@@ -471,7 +587,7 @@ func serveMonacoEditor(filePath string) {
 	mux := http.NewServeMux()
 	mux.Handle("/web/", http.FileServer(http.FS(webFS)))
 	mux.HandleFunc("/ai-explain-hover", handleAIExplainHover)
-	
+
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		t, err := template.New("editor").Parse(editorTemplate)
 		if err != nil {

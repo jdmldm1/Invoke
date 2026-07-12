@@ -14,8 +14,6 @@ type GitBranchInfo struct {
 	Remote  bool   `json:"remote"`
 }
 
-// handleGitBranches lists all branches in the repository directory.
-// GET /git/branches?dir=...
 func handleGitBranches(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
@@ -43,12 +41,11 @@ func handleGitBranches(w http.ResponseWriter, r *http.Request) {
 		if l == "" {
 			continue
 		}
-		
+
 		isCurrent := strings.HasPrefix(l, "*")
 		name := strings.TrimSpace(strings.TrimPrefix(l, "*"))
 		isRemote := strings.HasPrefix(name, "remotes/")
-		
-		// Clean remote prefix for display
+
 		if isRemote {
 			name = strings.TrimPrefix(name, "remotes/")
 		}
@@ -63,8 +60,6 @@ func handleGitBranches(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(branches)
 }
 
-// handleGitCheckout switches the branch.
-// POST /git/checkout  body: {"dir":"...", "branch":"..."}
 func handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
@@ -78,15 +73,12 @@ func handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Clean branch name from origin/ if switching to remote
 	branch := req.Branch
 	if strings.HasPrefix(branch, "origin/") {
 		localName := strings.TrimPrefix(branch, "origin/")
-		// Try to checkout and track remote branch
 		cmd := exec.Command("git", "checkout", "-b", localName, "--track", branch)
 		cmd.Dir = req.Dir
 		if err := cmd.Run(); err != nil {
-			// Fallback to simple checkout
 			cmdFallback := exec.Command("git", "checkout", localName)
 			cmdFallback.Dir = req.Dir
 			_ = cmdFallback.Run()
@@ -109,8 +101,6 @@ func handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
-// handleGitCreateBranch creates a new branch.
-// POST /git/create-branch  body: {"dir":"...", "name":"..."}
 func handleGitCreateBranch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")

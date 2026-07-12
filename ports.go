@@ -15,13 +15,12 @@ type PortInfo struct {
 	ProcessName string `json:"ProcessName"`
 }
 
-// handlePorts returns a JSON list of listening ports and their associated PIDs/processes.
 func handlePorts(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
 
 	cmdText := `Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | ForEach-Object { [PSCustomObject]@{ Port = $_.LocalPort; PID = $_.OwningProcess; ProcessName = (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).Name } } | ConvertTo-Json`
-	
+
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-Command", cmdText)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
@@ -41,8 +40,6 @@ func handlePorts(w http.ResponseWriter, r *http.Request) {
 	w.Write(output)
 }
 
-// handlePortsKill terminates a process by PID.
-// POST /ports/kill?pid=123
 func handlePortsKill(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
@@ -73,7 +70,6 @@ func handlePortsKill(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
-// handlePortsHTML serves the Port Manager UI.
 func handlePortsHTML(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.Write([]byte(portsHTMLTemplate))
@@ -222,7 +218,6 @@ const portsHTMLTemplate = `<!DOCTYPE html>
                 .then(data => {
                     tbody.innerHTML = '';
                     
-                    // Handle single object vs array from PowerShell ConverTo-Json
                     let ports = [];
                     if (data) {
                         if (Array.isArray(data)) {
@@ -237,7 +232,6 @@ const portsHTMLTemplate = `<!DOCTYPE html>
                         return;
                     }
 
-                    // Sort by port number
                     ports.sort((a, b) => a.Port - b.Port);
 
                     ports.forEach(p => {

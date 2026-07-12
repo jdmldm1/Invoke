@@ -20,9 +20,6 @@ import (
 	"github.com/gorilla/websocket"
 )
 
-// Embedded web assets (xterm.js + Monaco) so everything works fully offline /
-// air-gapped, with no CDN dependency.
-//
 //go:embed web
 var webFS embed.FS
 
@@ -32,7 +29,6 @@ var wsUpgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
-// connection bookkeeping so the server can auto-exit when the window is closed.
 var (
 	connMu        sync.Mutex
 	activeConns   int
@@ -40,8 +36,6 @@ var (
 	serverPort    int
 )
 
-// shellCommandLine builds the command line for a pane's shell, loading invoke.ps1
-// the same way runTerminalMode does.
 func shellCommandLine() string {
 	exePath, err := os.Executable()
 	if err != nil {
@@ -52,7 +46,6 @@ func shellCommandLine() string {
 	escExe := strings.ReplaceAll(exePath, "'", "''")
 	escScript := strings.ReplaceAll(scriptPath, "'", "''")
 
-	// Single-quoted strings only -> safe to wrap the whole thing in double quotes.
 	initCmd := fmt.Sprintf("$env:INVOKE_EXE='%s'; if (Test-Path '%s') { . '%s' }", escExe, escScript, escScript)
 
 	shell := "powershell.exe"
@@ -72,7 +65,6 @@ func atoiDefault(s string, def int) int {
 	return n
 }
 
-// handleTerminalWS bridges one xterm.js pane to one ConPTY-backed shell.
 func handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	conn, err := wsUpgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -84,8 +76,6 @@ func handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	rows := atoiDefault(r.URL.Query().Get("rows"), 24)
 	cwd := r.URL.Query().Get("cwd")
 
-	// Inject the window's own URL so `pt diff`/`pt edit` inside a pane can ask
-	// the running window to open a new tab instead of a separate browser window.
 	env := append(os.Environ(), fmt.Sprintf("INVOKE_HOST=http://127.0.0.1:%d", serverPort))
 	opts := []conpty.ConPtyOption{conpty.ConPtyDimensions(cols, rows), conpty.ConPtyEnv(env)}
 	if cwd != "" {
@@ -111,7 +101,6 @@ func handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		connMu.Unlock()
 	}()
 
-	// PTY output -> websocket (single writer goroutine).
 	go func() {
 		buf := make([]byte, 4096)
 		for {
@@ -129,7 +118,6 @@ func handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	// websocket -> PTY input / resize.
 	for {
 		_, data, readErr := conn.ReadMessage()
 		if readErr != nil {
@@ -155,15 +143,11 @@ func handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// openAppWindow launches a chromeless browser "app" window for a Warp-like feel,
-// falling back to the default browser.
 func openAppWindow(url string) {
-	// Headless escape hatch (testing / CI): skip launching a window.
 	if os.Getenv("INVOKE_NO_WINDOW") != "" {
 		return
 	}
 
-	// Write the favicon.ico to a known temp path so Edge/Chrome can load it.
 	icoPath := ""
 	if iconBytes, err := webFS.ReadFile("web/favicon.ico"); err == nil {
 		p := filepath.Join(os.TempDir(), "invoke_favicon.ico")
@@ -197,8 +181,6 @@ func openAppWindow(url string) {
 	openBrowser(url)
 }
 
-// serveTerminalWindow starts the terminal server and opens the app window.
-// It exits once the window has been opened and all panes are closed.
 func serveTerminalWindow() {
 	addr := "127.0.0.1:0"
 	if p := os.Getenv("INVOKE_TERM_PORT"); p != "" {
@@ -224,7 +206,6 @@ func serveTerminalWindow() {
 	})
 	mux.Handle("/web/", http.FileServer(http.FS(webFS)))
 	mux.HandleFunc("/ws", handleTerminalWS)
-	// In-window editor/diff tabs.
 	mux.HandleFunc("/control", handleControlWS)
 	mux.HandleFunc("/open", handleOpenRequest)
 	mux.HandleFunc("/diff", handleDiffRoute)
@@ -236,7 +217,6 @@ func serveTerminalWindow() {
 	mux.HandleFunc("/autoconfigure-ai", handleAutoconfigureAI)
 	mux.HandleFunc("/run-script", handleRunScript)
 	mux.HandleFunc("/file-save", handleFileSave)
-	// AI chat with file/folder context.
 	mux.HandleFunc("/chat", handleChatPage)
 	mux.HandleFunc("/fs", handleFS)
 	mux.HandleFunc("/chatws", handleChatWS)
@@ -267,9 +247,13 @@ func serveTerminalWindow() {
 	mux.HandleFunc("/git/branches", handleGitBranches)
 	mux.HandleFunc("/git/checkout", handleGitCheckout)
 	mux.HandleFunc("/git/create-branch", handleGitCreateBranch)
+	mux.HandleFunc("/ssh/endpoints", handleSSHEndpoints)
+	mux.HandleFunc("/ssh/connect", handleSSHConnect)
+	mux.HandleFunc("/scp", handleSCPPage)
+	mux.HandleFunc("/fs/tree", handleFSTree)
+	mux.HandleFunc("/ai-editor-complete", handleAIEditorComplete)
 
-	// Watchdog: once the window has connected at least once, exit shortly after
-	// all panes close (window closed).
+
 	go func() {
 		zero := 0
 		for {
@@ -289,11 +273,10 @@ func serveTerminalWindow() {
 	}()
 
 	fmt.Printf("Invoke window running at %s\nClose the window to return to the shell.\n", url)
-	setAppUserModelID() // must be set before the window is shown
+	setAppUserModelID()
 	openAppWindow(url)
-	go styleInvokeWindow() // make the app window semi-transparent once it appears
+	go styleInvokeWindow()
 
-	// Preload the Ollama model in the background at startup so the first call is never cold
 	go func() {
 		config := loadConfig()
 		host := cleanHost(config.OllamaHost)
@@ -558,7 +541,6 @@ func handleState(w http.ResponseWriter, r *http.Request) {
 		oldState := readAppState()
 		oldState.LastSessions = newState.LastSessions
 
-		// Merge recent sessions by Name, excluding default names
 		for _, ns := range newState.LastSessions {
 			name := strings.TrimSpace(ns.Name)
 			if name == "" || name == "Session 1" || strings.HasPrefix(name, "Session ") {

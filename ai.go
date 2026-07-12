@@ -15,14 +15,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
-// ollamaClient builds an HTTP client with a fast dial timeout (so unreachable
-// hosts fail quickly) and an overall timeout for the whole request. Pass
-// overall = 0 for streaming requests that may run long.
 func ollamaClient(overall time.Duration) *http.Client {
 	return &http.Client{
 		Timeout: overall,
 		Transport: &http.Transport{
-			Proxy: nil, // Bypass system proxy to prevent hangs on local/intranet hosts
+			Proxy: nil,
 			DialContext: (&net.Dialer{
 				Timeout:   3 * time.Second,
 				KeepAlive: 30 * time.Second,
@@ -31,8 +28,6 @@ func ollamaClient(overall time.Duration) *http.Client {
 	}
 }
 
-// aiGenerateOnce performs a single non-streaming generation and returns the
-// cleaned response text (markdown fences stripped).
 func aiGenerateOnce(prompt string, overall time.Duration) (string, error) {
 	config := loadConfig()
 	host := cleanHost(config.OllamaHost)
@@ -69,13 +64,10 @@ func aiGenerateOnce(prompt string, overall time.Duration) (string, error) {
 	return strings.TrimSpace(out), nil
 }
 
-// aiCommitMessageFromDiff asks the model for a Conventional Commits message
-// describing the given staged diff. Shared by the `gencommit` CLI and the TUI.
 func aiCommitMessageFromDiff(diff string) (string, error) {
 	if strings.TrimSpace(diff) == "" {
 		return "", fmt.Errorf("no staged changes")
 	}
-	// Cap the diff so we stay within the model's context window.
 	if len(diff) > 6000 {
 		diff = diff[:6000] + "\n...(diff truncated)..."
 	}
@@ -89,8 +81,6 @@ func aiCommitMessageFromDiff(diff string) (string, error) {
 	return aiGenerateOnce(prompt, 45*time.Second)
 }
 
-// generateCommitMessageCLI reads the staged diff and prints ONLY the generated
-// commit message to stdout. Backs `pt commit`.
 func generateCommitMessageCLI() {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -98,13 +88,11 @@ func generateCommitMessageCLI() {
 	}
 	msg, err := aiCommitMessageFromDiff(gitGetStagedDiff(dir))
 	if err != nil {
-		return // Silent: invoke.ps1 treats empty output as "couldn't generate".
+		return
 	}
 	fmt.Print(msg)
 }
 
-// reviewDiffCLI streams an AI code review of the current uncommitted changes.
-// Backs `pt review`.
 func reviewDiffCLI() {
 	dir, err := os.Getwd()
 	if err != nil {
@@ -119,8 +107,6 @@ func reviewDiffCLI() {
 		fmt.Println("No uncommitted changes to review.")
 		return
 	}
-	// Keep the prompt small so local models reach the first token quickly;
-	// prefill time on a large diff dominates latency on modest hardware.
 	if len(diff) > 3000 {
 		diff = diff[:3000] + "\n...(diff truncated; review focuses on the changes above)..."
 	}

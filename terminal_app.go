@@ -1,10 +1,5 @@
 package main
 
-// terminalAppHTML is the single-page xterm.js terminal: a menu bar (Session /
-// Pane / Run / View), tabs, split panes (vertical/horizontal), Monaco diff/edit
-// tabs, and a feature-rich status bar (cwd, branch, selection, zoom, broadcast).
-// NOTE: this is a Go raw string (backticks) so the embedded JS must NOT use
-// template literals — use string concatenation throughout.
 const terminalAppHTML = `<!DOCTYPE html>
 <html>
 <head>
@@ -1693,7 +1688,20 @@ const terminalAppHTML = `<!DOCTYPE html>
   }
   function clearActive(){ if(activePane) activePane.term.clear(); }
   function copyActive(){ if(activePane){ const s=activePane.term.getSelection(); if(s) navigator.clipboard.writeText(s).catch(function(){}); } }
-  function pasteActive(){ if(navigator.clipboard&&navigator.clipboard.readText) navigator.clipboard.readText().then(function(t){ if(t&&activePane) activePane.term.paste(t); }).catch(function(){}); }
+
+  function pasteActive(){
+    if (!activePane) return;
+    const pane = activePane;
+    const handler = function(e) {
+      document.removeEventListener('paste', handler, true);
+      const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
+      if (text) pane.term.paste(text);
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    document.addEventListener('paste', handler, true);
+    document.execCommand('paste');
+  }
   function toggleBroadcast(){ broadcastOn=!broadcastOn; updateFooter(); }
   function duplicateTab(){ newTab(null, activePane?activePane.cwd:''); }
   function zoom(dir){
@@ -1745,6 +1753,12 @@ const terminalAppHTML = `<!DOCTYPE html>
         {label:'Configure Jarvis Path', action:function(){configureJarvisPath();}},
         {label:'Autoconfigure AI', action:function(){autoconfigureAI();}},
       ]},
+      {label:'SSH', submenu:[
+        {label:'SSH Manager...', action:function(){openSSHManager();}},
+        {sep:true},
+        {label:'Quick Connect...', action:function(){openSSHQuickConnect();}},
+      ]},
+      {label:'SCP Transfer', action:function(){openSCPTab();}},
       {label:'Git Operations', submenu:[
         {label:'Status', action:function(){sendToActive('git status -sb');}},
         {label:'Pull', action:function(){sendToActive('git pull');}},
@@ -1795,7 +1809,12 @@ const terminalAppHTML = `<!DOCTYPE html>
         const sub=document.createElement('div'); sub.className='dropdown subdropdown'; renderDropdown(sub, it.submenu); mi.appendChild(sub);
       } else {
         if(it.key){ const k=document.createElement('span'); k.className='key'; k.textContent=it.key; mi.appendChild(k); }
-        mi.addEventListener('click',function(e){ e.stopPropagation(); closeMenus(); it.action(); });
+        mi.addEventListener('click',function(e){
+          e.stopPropagation();
+          closeMenus();
+          it.action();
+          if(activePane) setTimeout(function(){ try{ activePane.focus(); }catch(_){} }, 50);
+        });
       }
       dd.appendChild(mi);
     });
@@ -2191,7 +2210,12 @@ const terminalAppHTML = `<!DOCTYPE html>
     const nm=document.createElement('span'); nm.className='name'; nm.textContent=label;
     const x=document.createElement('span'); x.className='x'; x.textContent='×';
     t.appendChild(nm); t.appendChild(x); tab.tabEl=t; tab.nameEl=nm;
-    t.addEventListener('mousedown',ev=>{ if(ev.target!==x) selectTab(tab); });
+    t.addEventListener('mousedown',ev=>{
+      if(ev.target!==x) {
+        selectTab(tab);
+        ev.preventDefault();
+      }
+    });
     t.addEventListener('dblclick',ev=>{ if(ev.target!==x && tab.type==='term') renameTab(tab); });
     x.addEventListener('click',ev=>{ ev.stopPropagation(); closeTab(tab); });
     tabsEl.appendChild(t);
@@ -2352,6 +2376,7 @@ const terminalAppHTML = `<!DOCTYPE html>
   function renameTab(tab){
     const v=prompt('Session name:', tab.name);
     if(v && v.trim()){ tab.name=v.trim(); tab.nameEl.textContent=tab.name; updateFooter(); saveSessionState(true); }
+    if(activePane) setTimeout(function(){ try{ activePane.focus(); }catch(_){} }, 50);
   }
  
   function closeTab(tab){
@@ -2667,6 +2692,175 @@ const terminalAppHTML = `<!DOCTYPE html>
   }
 
   document.addEventListener('click', hideSuggest);
+
+  function openSSHManager() {
+    const overlay = document.createElement('div'); overlay.className = 'snippet-modal-overlay';
+    const modal = document.createElement('div'); modal.className = 'snippet-modal'; modal.style.width = '580px'; modal.style.maxWidth = '95%';
+    modal.innerHTML = '<h3 style="margin-top:0;display:flex;align-items:center;gap:8px">🔐 SSH Endpoints</h3>';
+    const epList = document.createElement('div');
+    epList.style.cssText = 'max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;margin-bottom:16px';
+    modal.appendChild(epList);
+    function loadEPs() {
+      epList.innerHTML = '<div style="padding:10px;color:var(--muted);font-size:12px">Loading...</div>';
+      fetch('/ssh/endpoints').then(r=>r.json()).then(eps=>{
+        window._sshEPs = eps;
+        epList.innerHTML = '';
+        if (!eps || eps.length === 0) {
+          epList.innerHTML = '<div style="padding:10px;color:var(--muted);font-size:12px">No endpoints saved yet.</div>';
+          return;
+        }
+        eps.forEach((ep, i) => {
+          const row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:8px;background:var(--panel2);border:1px solid var(--border2);border-radius:6px';
+          const info = document.createElement('div');
+          info.style.cssText = 'flex:1;font-size:12px';
+          info.innerHTML = '<strong style="color:var(--accent)">' + esc(ep.name) + '</strong> &nbsp; ' +
+            '<span style="color:var(--muted)">' + esc(ep.user) + '@' + esc(ep.host) + ':' + (ep.port||22) + '</span>' +
+            (ep.use_key ? ' <span style="color:var(--good);font-size:11px">🔑 key</span>' : ' <span style="color:var(--muted);font-size:11px">🔒 pwd</span>');
+          row.appendChild(info);
+          const connBtn = document.createElement('button');
+          connBtn.style.cssText = 'background:var(--accent);color:var(--ink);border:none;padding:4px 10px;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600';
+          connBtn.textContent = '⚡ Connect';
+          connBtn.onclick = () => {
+            fetch('/ssh/connect', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})})
+              .then(r=>r.json()).then(d=>{
+                if (d.cmd) {
+                  overlay.remove();
+                  if (activePane) {
+                    activePane.send({t:'i', d: d.cmd + '\r'});
+                    activePane.focus();
+                  }
+                }
+              });
+          };
+          row.appendChild(connBtn);
+          const delBtn = document.createElement('button');
+          delBtn.style.cssText = 'background:none;border:1px solid var(--bad);color:var(--bad);padding:4px 8px;border-radius:4px;cursor:pointer;font-size:11px';
+          delBtn.textContent = '✕';
+          delBtn.onclick = () => {
+            if (!confirm('Delete "' + ep.name + '"?')) return;
+            fetch('/ssh/endpoints', {method:'DELETE',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})})
+              .then(loadEPs);
+          };
+          row.appendChild(delBtn);
+          epList.appendChild(row);
+        });
+      });
+    }
+    loadEPs();
+    const addForm = document.createElement('div');
+    addForm.style.cssText = 'border-top:1px solid var(--border);padding-top:14px;display:grid;grid-template-columns:1fr 1fr;gap:8px';
+    addForm.innerHTML =
+      '<input id="ssh-name" placeholder="Name (e.g. My Server)" style="grid-column:1/-1;background:var(--panel2);border:1px solid var(--border2);color:var(--text);padding:7px 10px;border-radius:5px;outline:none;font-size:13px">' +
+      '<input id="ssh-host" placeholder="Host / IP" style="background:var(--panel2);border:1px solid var(--border2);color:var(--text);padding:7px 10px;border-radius:5px;outline:none;font-size:13px">' +
+      '<input id="ssh-user" placeholder="Username" style="background:var(--panel2);border:1px solid var(--border2);color:var(--text);padding:7px 10px;border-radius:5px;outline:none;font-size:13px">' +
+      '<input id="ssh-port" placeholder="Port (default 22)" type="number" style="background:var(--panel2);border:1px solid var(--border2);color:var(--text);padding:7px 10px;border-radius:5px;outline:none;font-size:13px">' +
+      '<input id="ssh-pass" placeholder="Password (optional, stored encrypted)" type="password" style="background:var(--panel2);border:1px solid var(--border2);color:var(--text);padding:7px 10px;border-radius:5px;outline:none;font-size:13px">' +
+      '<label style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted)"><input type="checkbox" id="ssh-usekey"> Use SSH Key (no password)</label>';
+    modal.appendChild(addForm);
+    const btns = document.createElement('div'); btns.style.cssText = 'display:flex;gap:8px;justify-content:flex-end;margin-top:14px';
+    const saveBtn = document.createElement('button'); saveBtn.className = 'modal-btn run'; saveBtn.textContent = '+ Add Endpoint';
+    saveBtn.onclick = () => {
+      const name = document.getElementById('ssh-name').value.trim();
+      const host = document.getElementById('ssh-host').value.trim();
+      const user = document.getElementById('ssh-user').value.trim();
+      const port = parseInt(document.getElementById('ssh-port').value) || 22;
+      const pass = document.getElementById('ssh-pass').value;
+      const useKey = document.getElementById('ssh-usekey').checked;
+      if (!name || !host || !user) { alert('Name, host, and user are required.'); return; }
+      fetch('/ssh/endpoints', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({name, host, user, port, use_key: useKey, enc_password: pass})
+      }).then(loadEPs).then(() => {
+        document.getElementById('ssh-name').value = '';
+        document.getElementById('ssh-host').value = '';
+        document.getElementById('ssh-user').value = '';
+        document.getElementById('ssh-port').value = '';
+        document.getElementById('ssh-pass').value = '';
+      });
+    };
+    const closeBtn = document.createElement('button'); closeBtn.className = 'modal-btn cancel'; closeBtn.textContent = 'Close';
+    closeBtn.onclick = () => { overlay.remove(); if(activePane) setTimeout(()=>activePane.focus(), 50); };
+    btns.appendChild(saveBtn); btns.appendChild(closeBtn);
+    modal.appendChild(btns);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    document.getElementById('ssh-name').focus();
+  }
+
+  function openSSHQuickConnect() {
+    fetch('/ssh/endpoints').then(r=>r.json()).then(eps=>{
+      if (!eps || eps.length === 0) {
+        openSSHManager();
+        return;
+      }
+      const overlay = document.createElement('div'); overlay.className = 'snippet-modal-overlay';
+      const modal = document.createElement('div'); modal.className = 'snippet-modal'; modal.style.width = '400px';
+      modal.innerHTML = '<h3 style="margin-top:0">⚡ Quick SSH Connect</h3>';
+      const list = document.createElement('div');
+      list.style.cssText = 'display:flex;flex-direction:column;gap:8px;margin-bottom:14px';
+      eps.forEach((ep, i) => {
+        const btn = document.createElement('button');
+        btn.style.cssText = 'background:var(--panel2);border:1px solid var(--border2);color:var(--text);padding:10px 14px;border-radius:6px;cursor:pointer;text-align:left;font-size:13px';
+        btn.innerHTML = '<strong style="color:var(--accent)">' + esc(ep.name) + '</strong><br><span style="font-size:11px;color:var(--muted)">' + esc(ep.user) + '@' + esc(ep.host) + ':' + (ep.port||22) + '</span>';
+        btn.onmouseover = () => btn.style.borderColor = 'var(--accent)';
+        btn.onmouseout = () => btn.style.borderColor = 'var(--border2)';
+        btn.onclick = () => {
+          fetch('/ssh/connect', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({index:i})})
+            .then(r=>r.json()).then(d=>{
+              if (d.cmd && activePane) {
+                overlay.remove();
+                activePane.send({t:'i', d: d.cmd + '\r'});
+                activePane.focus();
+              }
+            });
+        };
+        list.appendChild(btn);
+      });
+      modal.appendChild(list);
+      const cancelBtn = document.createElement('button'); cancelBtn.className = 'modal-btn cancel'; cancelBtn.textContent = 'Cancel';
+      cancelBtn.onclick = () => { overlay.remove(); if(activePane) setTimeout(()=>activePane.focus(), 50); };
+      const mBtn = document.createElement('button'); mBtn.className = 'modal-btn run'; mBtn.textContent = '+ Manage Endpoints';
+      mBtn.onclick = () => { overlay.remove(); openSSHManager(); };
+      const btns = document.createElement('div'); btns.className = 'modal-btns'; btns.appendChild(mBtn); btns.appendChild(cancelBtn);
+      modal.appendChild(btns);
+      overlay.onclick = e => { if(e.target===overlay){ overlay.remove(); if(activePane) setTimeout(()=>activePane.focus(),50); } };
+      overlay.appendChild(modal);
+      document.body.appendChild(overlay);
+    });
+  }
+
+  function openSCPTab() {
+    const tab={id:++tabSeq, type:'view', viewType:'scp', name:'SCP Transfer',
+      panes:new Set(), root:document.createElement('div'), tabEl:null};
+    tab.root.className='layout';
+    const frame=document.createElement('iframe');
+    frame.style.cssText='border:0;flex:1 1 auto;width:100%;height:100%;background:#000';
+    frame.setAttribute('allow', 'clipboard-write; clipboard-read');
+    frame.src='/scp';
+    tab.root.appendChild(frame);
+    workspace.appendChild(tab.root);
+    buildTabButton(tab, '⬆ '+tab.name);
+    tabs.push(tab);
+    selectTab(tab);
+    window.addEventListener('message', function(e) {
+      if (e.data && e.data.type === 'scp-cmd' && e.data.cmd && activePane) {
+        const termTab = tabs.find(t => t.type === 'term');
+        if (termTab) {
+          const firstPane = termTab.panes.values().next().value;
+          if (firstPane) {
+            selectTab(termTab);
+            setTimeout(() => {
+              firstPane.send({t:'i', d: e.data.cmd + '\r'});
+              firstPane.focus();
+            }, 100);
+          }
+        }
+      }
+    });
+    updateFooter();
+  }
 
   const refreshEl = document.getElementById('sb-refresh');
   if (refreshEl) refreshEl.onclick = () => refreshSidebar();

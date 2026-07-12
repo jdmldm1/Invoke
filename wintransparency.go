@@ -20,16 +20,17 @@ var (
 	opacityMu          sync.Mutex
 )
 
-// styleInvokeWindow polls for the Invoke app window (by title) after it launches
-// and applies layered-window alpha so the whole window is semi-transparent.
-// Tunable with INVOKE_OPACITY (40-100, percent); 100 disables transparency.
 func styleInvokeWindow() {
+	defer func() {
+		if r := recover(); r != nil {
+			// Fail silently or print error so server does not crash
+		}
+	}()
+
 	if os.Getenv("INVOKE_NO_WINDOW") != "" {
 		return
 	}
 
-	// Tell Windows this process belongs to a distinct app so it gets its own
-	// taskbar button/icon rather than being grouped under msedge.exe/chrome.exe.
 	setAppUserModelID()
 
 	state := readAppState()
@@ -73,9 +74,9 @@ func styleInvokeWindow() {
 			opacityMu.Lock()
 			invokeWindowHandle = h
 			opacityMu.Unlock()
-			return 0 // stop enumeration
+			return 0
 		}
-		return 1 // continue
+		return 1
 	})
 
 	icoPath := ""
@@ -86,7 +87,7 @@ func styleInvokeWindow() {
 		}
 	}
 
-	for i := 0; i < 50; i++ { // ~10s of polling
+	for i := 0; i < 50; i++ {
 		time.Sleep(200 * time.Millisecond)
 		found = 0
 		enumProc.Call(cb, 0)
@@ -95,7 +96,7 @@ func styleInvokeWindow() {
 			alpha := byte(255 * currentOpacityPct / 100)
 			applyWindowAlpha(found, alpha)
 			applyWindowIcon(found, icoPath)
-			applyWindowAppID(found, icoPath)
+			// applyWindowAppID(found, icoPath)
 			opacityMu.Unlock()
 			return
 		}
@@ -120,9 +121,9 @@ func adjustOpacity(direction string) (int, error) {
 			getText.Call(uintptr(h), uintptr(unsafe.Pointer(&buf[0])), uintptr(len(buf)))
 			if strings.HasPrefix(windows.UTF16ToString(buf), "Invoke") {
 				invokeWindowHandle = h
-				return 0 // stop
+				return 0
 			}
-			return 1 // continue
+			return 1
 		})
 		enumProc.Call(cb, 0)
 	}
@@ -157,7 +158,7 @@ func applyWindowAlpha(h syscall.Handle, alpha byte) {
 	setLong := user32.NewProc("SetWindowLongW")
 	setLWA := user32.NewProc("SetLayeredWindowAttributes")
 
-	idx := int32(-20) // GWL_EXSTYLE
+	idx := int32(-20)
 	const wsExLayered = 0x00080000
 	const lwaAlpha = 0x2
 
@@ -203,11 +204,7 @@ func applyWindowIcon(h syscall.Handle, icoPath string) {
 	}
 }
 
-// applyWindowAppID sets the Windows Shell AppUserModelID and relaunch icon
-// on the Edge/Chrome window's IPropertyStore via SHGetPropertyStoreForWindow.
-// This makes the taskbar show Invoke's icon instead of the browser's icon.
 func applyWindowAppID(h syscall.Handle, icoPath string) {
-	// IID_IPropertyStore = {886D8EEB-8CF2-4446-8D02-CDBA1DBDCF99}
 	iid := windows.GUID{
 		Data1: 0x886D8EEB,
 		Data2: 0x8CF2,
@@ -228,17 +225,15 @@ func applyWindowAppID(h syscall.Handle, icoPath string) {
 	}
 	defer func() {
 		vtbl := *(*[8]uintptr)(unsafe.Pointer(pStore))
-		syscall.SyscallN(vtbl[2], pStore, 0, 0) // Release
+		syscall.SyscallN(vtbl[2], pStore, 0, 0)
 	}()
 
 	vtbl := *(*[8]uintptr)(unsafe.Pointer(pStore))
 
-	// PROPERTYKEY layout: GUID (16 bytes) + DWORD pid (4 bytes) = 20 bytes
 	type PROPERTYKEY struct {
 		fmtid windows.GUID
 		pid   uint32
 	}
-	// PROPVARIANT layout on 64-bit: vt(2)+res(6)+ptr(8) = 16 bytes
 	type PROPVARIANT struct {
 		vt   uint16
 		res1 uint16
@@ -252,21 +247,19 @@ func applyWindowAppID(h syscall.Handle, icoPath string) {
 		if err != nil {
 			return
 		}
-		pv := PROPVARIANT{vt: 31, ptr: uintptr(unsafe.Pointer(wstr))} // VT_LPWSTR=31
-		syscall.SyscallN(vtbl[6], pStore,                              // SetValue (index 6)
+		pv := PROPVARIANT{vt: 31, ptr: uintptr(unsafe.Pointer(wstr))}
+		syscall.SyscallN(vtbl[6], pStore,
 			uintptr(unsafe.Pointer(&key)),
 			uintptr(unsafe.Pointer(&pv)),
 		)
 	}
 
-	// PKEY_AppUserModel_ID = {9F4C2855-9F79-4B39-A8D0-E1D42DE1D5F3}, pid=5
 	setVal(PROPERTYKEY{
 		fmtid: windows.GUID{Data1: 0x9F4C2855, Data2: 0x9F79, Data3: 0x4B39,
 			Data4: [8]byte{0xA8, 0xD0, 0xE1, 0xD4, 0x2D, 0xE1, 0xD5, 0xF3}},
 		pid: 5,
 	}, "Invoke.Terminal.App")
 
-	// PKEY_AppUserModel_RelaunchIconResource = same fmtid, pid=3
 	if icoPath != "" {
 		setVal(PROPERTYKEY{
 			fmtid: windows.GUID{Data1: 0x9F4C2855, Data2: 0x9F79, Data3: 0x4B39,
@@ -275,12 +268,9 @@ func applyWindowAppID(h syscall.Handle, icoPath string) {
 		}, icoPath)
 	}
 
-	syscall.SyscallN(vtbl[7], pStore, 0, 0) // Commit (index 7)
+	syscall.SyscallN(vtbl[7], pStore, 0, 0)
 }
 
-// setAppUserModelID assigns a Windows Application User Model ID to this process.
-// This tells the taskbar to group Invoke's window under its own icon/entry
-// instead of the generic msedge.exe/chrome.exe group.
 func setAppUserModelID() {
 	shell32 := windows.NewLazySystemDLL("shell32.dll")
 	proc := shell32.NewProc("SetCurrentProcessExplicitAppUserModelID")
@@ -291,4 +281,3 @@ func setAppUserModelID() {
 	}
 	proc.Call(uintptr(unsafe.Pointer(appID)))
 }
-

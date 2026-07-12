@@ -11,7 +11,7 @@ import (
 
 type GitFileStatus struct {
 	Path   string
-	Status string // "added", "modified", "deleted", "untracked", "staged"
+	Status string
 }
 
 type GitRepoStatus struct {
@@ -21,7 +21,6 @@ type GitRepoStatus struct {
 }
 
 func getGitStatus(dir string) GitRepoStatus {
-	// Check inside work tree
 	cmd := exec.Command("git", "rev-parse", "--is-inside-work-tree")
 	cmd.Dir = dir
 	err := cmd.Run()
@@ -29,7 +28,6 @@ func getGitStatus(dir string) GitRepoStatus {
 		return GitRepoStatus{IsRepo: false}
 	}
 
-	// Branch
 	branchCmd := exec.Command("git", "branch", "--show-current")
 	branchCmd.Dir = dir
 	branchOut, _ := branchCmd.Output()
@@ -41,7 +39,6 @@ func getGitStatus(dir string) GitRepoStatus {
 		branch = strings.TrimSpace(string(branchOut))
 	}
 
-	// Status porcelain
 	statusCmd := exec.Command("git", "status", "--porcelain")
 	statusCmd.Dir = dir
 	statusOut, _ := statusCmd.Output()
@@ -86,7 +83,6 @@ func gitStageFile(dir, file string) error {
 }
 
 func gitUnstageFile(dir, file string) error {
-	// Use restore --staged
 	cmd := exec.Command("git", "restore", "--staged", file)
 	cmd.Dir = dir
 	return cmd.Run()
@@ -94,7 +90,6 @@ func gitUnstageFile(dir, file string) error {
 
 func gitGetDiff(dir, file string) string {
 	var cmd *exec.Cmd
-	// If file status is staged, run git diff --cached
 	status := getGitStatus(dir)
 	isStaged := false
 	for _, f := range status.Files {
@@ -184,8 +179,6 @@ func gitStageAll(dir string) error {
 	return cmd.Run()
 }
 
-// gitDiscardFile permanently reverts working-tree changes for a single file.
-// Untracked files are deleted; tracked files are restored to HEAD.
 func gitDiscardFile(dir string, f GitFileStatus) (string, error) {
 	if f.Status == "untracked" {
 		if err := os.Remove(filepath.Join(dir, f.Path)); err != nil {
@@ -194,7 +187,6 @@ func gitDiscardFile(dir string, f GitFileStatus) (string, error) {
 		return "Deleted untracked file: " + f.Path, nil
 	}
 
-	// Unstage first (no-op if it wasn't staged), then restore the working tree.
 	unstage := exec.Command("git", "restore", "--staged", f.Path)
 	unstage.Dir = dir
 	_ = unstage.Run()
@@ -205,7 +197,6 @@ func gitDiscardFile(dir string, f GitFileStatus) (string, error) {
 	cmd.Stdout = &out
 	cmd.Stderr = &out
 	if err := cmd.Run(); err != nil {
-		// Fall back to checkout for older git versions.
 		cmd2 := exec.Command("git", "checkout", "--", f.Path)
 		cmd2.Dir = dir
 		var out2 bytes.Buffer
@@ -218,8 +209,6 @@ func gitDiscardFile(dir string, f GitFileStatus) (string, error) {
 	return "Discarded changes in: " + f.Path, nil
 }
 
-// gitFileAtHead returns the committed (HEAD) contents of a file. Returns an
-// empty string for new/untracked files or when not in a repo.
 func gitFileAtHead(absPath string) string {
 	dir := filepath.Dir(absPath)
 	rootCmd := exec.Command("git", "rev-parse", "--show-toplevel")
@@ -249,7 +238,6 @@ func gitGetStagedDiff(dir string) string {
 	return string(out)
 }
 
-// gitGetWorkingDiff returns all uncommitted changes vs HEAD (staged + unstaged).
 func gitGetWorkingDiff(dir string) string {
 	cmd := exec.Command("git", "diff", "HEAD")
 	cmd.Dir = dir

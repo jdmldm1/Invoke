@@ -26,7 +26,6 @@ type SidebarResponse struct {
 	Tasks []SidebarTask `json:"tasks"`
 }
 
-// handleSidebarInfo scans the CWD for files and developer tasks.
 func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Content-Type", "application/json")
@@ -46,7 +45,6 @@ func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 		Tasks: []SidebarTask{},
 	}
 
-	// 1. Scan files
 	entries, err := os.ReadDir(absDir)
 	if err == nil {
 		for _, e := range entries {
@@ -57,8 +55,6 @@ func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// 2. Scan developer scripts / tasks
-	// package.json
 	packageJsonPath := filepath.Join(absDir, "package.json")
 	if f, err := os.Open(packageJsonPath); err == nil {
 		defer f.Close()
@@ -76,7 +72,6 @@ func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// go.mod
 	goModPath := filepath.Join(absDir, "go.mod")
 	if _, err := os.Stat(goModPath); err == nil {
 		res.Tasks = append(res.Tasks, SidebarTask{Name: "go run .", Cmd: "go run ."})
@@ -84,14 +79,12 @@ func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 		res.Tasks = append(res.Tasks, SidebarTask{Name: "go build", Cmd: "go build"})
 	}
 
-	// Makefile
 	makefileJsonPath := filepath.Join(absDir, "Makefile")
 	if f, err := os.Open(makefileJsonPath); err == nil {
 		defer f.Close()
 		b, _ := io.ReadAll(f)
 		content := string(b)
-		
-		// Regex to find Makefile targets (e.g. build: clean)
+
 		re := regexp.MustCompile(`^[a-zA-Z0-9_-]+:`)
 		lines := strings.Split(content, "\n")
 		for _, l := range lines {
@@ -107,7 +100,6 @@ func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// requirements.txt
 	requirementsPath := filepath.Join(absDir, "requirements.txt")
 	if _, err := os.Stat(requirementsPath); err == nil {
 		res.Tasks = append(res.Tasks, SidebarTask{
@@ -116,7 +108,6 @@ func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// Cargo.toml
 	cargoPath := filepath.Join(absDir, "Cargo.toml")
 	if _, err := os.Stat(cargoPath); err == nil {
 		res.Tasks = append(res.Tasks, SidebarTask{Name: "cargo run", Cmd: "cargo run"})
