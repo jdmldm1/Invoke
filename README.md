@@ -1,6 +1,6 @@
 # Invoke
 
-An enhanced, air-gapped terminal workspace with an embedded editor and developer tools served from a single binary.
+Air-gapped terminal with file editor and tools.
 
 ![Invoke terminal](docs/screenshots/terminal.png)
 
@@ -27,7 +27,6 @@ An enhanced, air-gapped terminal workspace with an embedded editor and developer
 
 ---
 
-## Critical Information
 
 ### Key Bindings
 * `Ctrl + \` : Toggle file sidebar
