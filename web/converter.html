@@ -1,51 +1,4 @@
-package main
-
-import (
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"time"
-)
-
-func handleConverterRoute(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(converterPageHTML))
-}
-
-func handleConverterRun(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
-		return
-	}
-
-	var req struct {
-		Code string `json:"code"`
-		From string `json:"from"`
-		To   string `json:"to"`
-	}
-	if json.NewDecoder(r.Body).Decode(&req) != nil || req.Code == "" {
-		http.Error(w, "bad request", 400)
-		return
-	}
-
-	prompt := fmt.Sprintf(
-		"You are a specialized scripting language translator. Translate this script/command from %s to %s.\n"+
-			"Provide ONLY the translated code, without any markdown backticks, without any prefix/suffix explanation, and without additional comments unless required for functional correctness. "+
-			"Here is the code to translate:\n\n%s",
-		req.From, req.To, req.Code,
-	)
-
-	out, err := aiGenerateOnce(prompt, 60*time.Second)
-	w.Header().Set("Content-Type", "application/json")
-	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-		return
-	}
-
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "code": out})
-}
-
-const converterPageHTML = `<!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8">
@@ -136,11 +89,9 @@ const converterPageHTML = `<!DOCTYPE html>
     convertBtn.onclick = function() {
       const code = source.value.trim();
       if (!code) return;
-
       convertBtn.disabled = true;
       status.textContent = 'Translating using Ollama...';
       result.value = '';
-
       fetch('/converter/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -164,7 +115,6 @@ const converterPageHTML = `<!DOCTYPE html>
         convertBtn.disabled = false;
       });
     };
-
     copyBtn.onclick = function() {
       if (!result.value) return;
       navigator.clipboard.writeText(result.value);
@@ -174,4 +124,4 @@ const converterPageHTML = `<!DOCTYPE html>
     };
   </script>
 </body>
-</html>`
+</html>

@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"encoding/json"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 )
 
 type Snippet struct {
@@ -30,9 +33,28 @@ type ConfigData struct {
 	SSHEndpoints []SSHEndpoint     `json:"ssh_endpoints"`
 }
 
+type LayoutPane struct {
+	CWD string `json:"cwd"`
+}
+
+type LayoutTab struct {
+	Name  string       `json:"name"`
+	Panes []LayoutPane `json:"panes"`
+	Split string       `json:"split,omitempty"`
+}
+
+type Layout struct {
+	Name      string      `json:"name"`
+	SavedAt   time.Time   `json:"saved_at"`
+	Tabs      []LayoutTab `json:"tabs"`
+	ActiveTab int         `json:"active_tab"`
+}
+
 var (
 	configPath string
 	configMu   sync.Mutex
+	layoutMu   sync.Mutex
+	layoutPath string
 )
 
 func initConfig() {
@@ -41,6 +63,14 @@ func initConfig() {
 		home = "."
 	}
 	configPath = filepath.Join(home, ".powerterm.json")
+}
+
+func initLayouts() {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "."
+	}
+	layoutPath = filepath.Join(home, ".powerterm_layouts.json")
 }
 
 func loadConfig() ConfigData {
@@ -272,4 +302,121 @@ func deletePrompt(index int) {
 	}
 	config.Prompts = append(config.Prompts[:index], config.Prompts[index+1:]...)
 	saveConfig(config)
+}
+
+func loadLayouts() []Layout {
+	layoutMu.Lock()
+	defer layoutMu.Unlock()
+	data, err := os.ReadFile(layoutPath)
+	if err != nil {
+		return []Layout{}
+	}
+	var layouts []Layout
+	if err := json.Unmarshal(data, &layouts); err != nil {
+		return []Layout{}
+	}
+	return layouts
+}
+
+func saveLayouts(layouts []Layout) {
+	layoutMu.Lock()
+	defer layoutMu.Unlock()
+	data, _ := json.MarshalIndent(layouts, "", "  ")
+	if err := os.WriteFile(layoutPath, data, 0644); err != nil {
+		log.Printf("Failed to save layouts: %v", err)
+	}
+}
+
+func handleLayout(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+
+	switch r.Method {
+	case http.MethodGet:
+		layouts := loadLayouts()
+		json.NewEncoder(w).Encode(layouts)
+
+	case http.MethodPost:
+		var layout Layout
+		if err := json.NewDecoder(r.Body).Decode(&layout); err != nil {
+			http.Error(w, "bad json", 400)
+			return
+		}
+		layout.SavedAt = time.Now()
+		layouts := loadLayouts()
+		replaced := false
+		for i, l := range layouts {
+			if l.Name == layout.Name {
+				layouts[i] = layout
+				replaced = true
+				break
+			}
+		}
+		if !replaced {
+			layouts = append(layouts, layout)
+		}
+		saveLayouts(layouts)
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+
+	case http.MethodDelete:
+		name := r.URL.Query().Get("name")
+		if name == "" {
+			http.Error(w, "name required", 400)
+			return
+		}
+		layouts := loadLayouts()
+		filtered := layouts[:0]
+		for _, l := range layouts {
+			if l.Name != name {
+				filtered = append(filtered, l)
+			}
+		}
+		saveLayouts(filtered)
+		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+
+	default:
+		http.Error(w, "method not allowed", 405)
+	}
+}
+
+func handleHistory(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Content-Type", "application/json")
+
+	historyList := []string{}
+
+	appData := os.Getenv("APPDATA")
+	if appData != "" {
+		historyPath := filepath.Join(appData, "Microsoft", "Windows", "PowerShell", "PSReadLine", "ConsoleHost_history.txt")
+		if file, err := os.Open(historyPath); err == nil {
+			defer file.Close()
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				cmd := strings.TrimSpace(scanner.Text())
+				if cmd != "" {
+					historyList = append(historyList, cmd)
+				}
+			}
+		}
+	}
+
+	if len(historyList) == 0 {
+		config := loadConfig()
+		historyList = config.History
+	}
+
+	unique := []string{}
+	seen := make(map[string]bool)
+	for i := len(historyList) - 1; i >= 0; i-- {
+		cmd := historyList[i]
+		if !seen[cmd] {
+			seen[cmd] = true
+			unique = append(unique, cmd)
+		}
+		if len(unique) >= 150 {
+			break
+		}
+	}
+
+	json.NewEncoder(w).Encode(unique)
 }

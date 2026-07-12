@@ -10,10 +10,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/UserExistsError/conpty"
@@ -34,6 +32,8 @@ var (
 	activeConns   int
 	everConnected bool
 	serverPort    int
+	ctrlMu        sync.Mutex
+	ctrlConns     = map[*websocket.Conn]bool{}
 )
 
 func shellCommandLine() string {
@@ -258,7 +258,6 @@ func serveTerminalWindow() {
 	mux.HandleFunc("/fs/tree", handleFSTree)
 	mux.HandleFunc("/ai-editor-complete", handleAIEditorComplete)
 
-
 	go func() {
 		zero := 0
 		for {
@@ -316,6 +315,102 @@ func handleTransparency(w http.ResponseWriter, r *http.Request) {
 	writeAppState(state)
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{"opacity": pct})
+}
+
+func broadcastControl(v interface{}) {
+	b, _ := json.Marshal(v)
+	ctrlMu.Lock()
+	defer ctrlMu.Unlock()
+	for c := range ctrlConns {
+		_ = c.WriteMessage(websocket.TextMessage, b)
+	}
+}
+
+func handleControlWS(w http.ResponseWriter, r *http.Request) {
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	ctrlMu.Lock()
+	ctrlConns[conn] = true
+	ctrlMu.Unlock()
+	for {
+		if _, _, e := conn.ReadMessage(); e != nil {
+			break
+		}
+	}
+	ctrlMu.Lock()
+	delete(ctrlConns, conn)
+	ctrlMu.Unlock()
+	conn.Close()
+}
+
+func handleOpenRequest(w http.ResponseWriter, r *http.Request) {
+	var req struct{ Type, File string }
+	if json.NewDecoder(r.Body).Decode(&req) != nil || req.File == "" {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	abs, err := filepath.Abs(req.File)
+	if err != nil {
+		abs = req.File
+	}
+	typ := "diff"
+	if req.Type == "edit" {
+		typ = "edit"
+	} else if req.Type == "git" {
+		typ = "git"
+	}
+	broadcastControl(map[string]string{
+		"action": "openTab", "type": typ, "file": abs, "name": filepath.Base(abs),
+	})
+	w.WriteHeader(200)
+}
+
+func handleDiffRoute(w http.ResponseWriter, r *http.Request) {
+	abs, _ := filepath.Abs(r.URL.Query().Get("file"))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(monacoDiffHTML(filepath.Base(abs), filepath.Ext(abs), gitFileAtHead(abs), readFileOrEmpty(abs))))
+}
+
+func handleEditRoute(w http.ResponseWriter, r *http.Request) {
+	abs, _ := filepath.Abs(r.URL.Query().Get("file"))
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write([]byte(monacoEditHTML(filepath.Base(abs), filepath.Ext(abs), abs, readFileOrEmpty(abs))))
+}
+
+func handleRunScript(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		Code string `json:"code"`
+	}
+	if json.NewDecoder(r.Body).Decode(&req) != nil || req.Code == "" {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "invalid request payload"})
+		return
+	}
+
+	userHome, err := os.UserHomeDir()
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
+	}
+
+	dir := filepath.Join(userHome, ".gemini", "antigravity")
+	_ = os.MkdirAll(dir, 0755)
+
+	filePath := filepath.Join(dir, "powerterm_run.ps1")
+	err = os.WriteFile(filePath, []byte(req.Code), 0644)
+	if err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		return
+	}
+
+	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "path": filePath})
 }
 
 func handleConfig(w http.ResponseWriter, r *http.Request) {
@@ -407,50 +502,12 @@ func handleScratchpadPath(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{"path": path})
 }
 
-func handleFileSearch(w http.ResponseWriter, r *http.Request) {
-	dir := r.URL.Query().Get("dir")
-	if dir == "" {
-		dir, _ = os.Getwd()
-	}
-	q := strings.ToLower(r.URL.Query().Get("q"))
-
-	var files []string
-	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		name := info.Name()
-		if info.IsDir() {
-			if name == ".git" || name == "node_modules" || name == ".gemini" || name == "dist" || name == "build" || name == "bin" || name == "obj" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-		rel, err := filepath.Rel(dir, path)
-		if err != nil {
-			return nil
-		}
-		relLower := strings.ToLower(rel)
-		if q == "" || strings.Contains(relLower, q) {
-			files = append(files, rel)
-		}
-		if len(files) >= 15 {
-			return fmt.Errorf("limit reached")
-		}
-		return nil
-	})
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(files)
-}
-
 func handleSessionScratchpadPath(w http.ResponseWriter, r *http.Request) {
 	session := r.URL.Query().Get("session")
 	if session == "" {
 		session = "default"
 	}
 
-	// Clean session name to be safe for filenames (alphanumeric and underscores only)
 	var safeSession strings.Builder
 	for _, char := range session {
 		if (char >= 'a' && char <= 'z') || (char >= 'A' && char <= 'Z') || (char >= '0' && char <= '9') || char == '_' || char == '-' {
@@ -571,215 +628,4 @@ func handleState(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Error(w, "method not allowed", 405)
-}
-
-type SearchResult struct {
-	File    string `json:"file"`
-	Line    int    `json:"line"`
-	Content string `json:"content"`
-}
-
-func handleSearchInFiles(w http.ResponseWriter, r *http.Request) {
-	dir := r.URL.Query().Get("dir")
-	if dir == "" {
-		dir, _ = os.Getwd()
-	}
-	q := r.URL.Query().Get("q")
-	if q == "" {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode([]SearchResult{})
-		return
-	}
-
-	var results []SearchResult
-	_ = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil
-		}
-		name := info.Name()
-		if info.IsDir() {
-			if name == ".git" || name == "node_modules" || name == ".gemini" || name == "dist" || name == "build" || name == "bin" || name == "obj" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		if info.Size() > 1024*1024 {
-			return nil
-		}
-
-		data, err := os.ReadFile(path)
-		if err != nil {
-			return nil
-		}
-
-		contentStr := string(data)
-		if !strings.Contains(strings.ToLower(contentStr), strings.ToLower(q)) {
-			return nil
-		}
-
-		rel, err := filepath.Rel(dir, path)
-		if err != nil {
-			return nil
-		}
-
-		lines := strings.Split(contentStr, "\n")
-		for idx, line := range lines {
-			if strings.Contains(strings.ToLower(line), strings.ToLower(q)) {
-				results = append(results, SearchResult{
-					File:    rel,
-					Line:    idx + 1,
-					Content: strings.TrimSpace(line),
-				})
-				if len(results) >= 50 {
-					return fmt.Errorf("limit reached")
-				}
-			}
-		}
-		return nil
-	})
-
-	w.Header().Set("Content-Type", "application/json")
-	_ = json.NewEncoder(w).Encode(results)
-}
-
-func handleRunScript(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
-		return
-	}
-
-	var req struct {
-		Code string `json:"code"`
-	}
-	if json.NewDecoder(r.Body).Decode(&req) != nil || req.Code == "" {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "invalid request payload"})
-		return
-	}
-
-	userHome, err := os.UserHomeDir()
-	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-		return
-	}
-
-	dir := filepath.Join(userHome, ".gemini", "antigravity")
-	_ = os.MkdirAll(dir, 0755)
-
-	filePath := filepath.Join(dir, "powerterm_run.ps1")
-	err = os.WriteFile(filePath, []byte(req.Code), 0644)
-	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-		return
-	}
-
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "path": filePath})
-}
-
-func handleFreePort(w http.ResponseWriter, r *http.Request) {
-	portStr := r.URL.Query().Get("port")
-	w.Header().Set("Content-Type", "application/json")
-	if portStr == "" {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "port parameter required"})
-		return
-	}
-	port, err := strconv.Atoi(portStr)
-	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "invalid port number"})
-		return
-	}
-
-	pid, err := findPIDHoldingPort(port)
-	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
-		return
-	}
-	if pid == 0 {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": fmt.Sprintf("No active process found on port %d.", port)})
-		return
-	}
-
-	err = killProcess(pid)
-	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": fmt.Sprintf("Failed to release port: %v", err)})
-		return
-	}
-
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"pid":     pid,
-		"message": fmt.Sprintf("Successfully released port %d (terminated process %d).", port, pid),
-	})
-}
-
-func findPIDHoldingPort(port int) (int, error) {
-	cmd := exec.Command("netstat", "-ano")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	out, err := cmd.Output()
-	if err != nil {
-		return 0, err
-	}
-
-	targetLocalAddr1 := fmt.Sprintf(":%d", port)
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		fields := strings.Fields(line)
-		if len(fields) < 5 {
-			continue
-		}
-		localAddr := fields[1]
-		if strings.HasSuffix(localAddr, targetLocalAddr1) {
-			pidStr := fields[len(fields)-1]
-			pid, err := strconv.Atoi(pidStr)
-			if err == nil {
-				return pid, nil
-			}
-		}
-	}
-	return 0, nil
-}
-
-func killProcess(pid int) error {
-	cmd := exec.Command("taskkill", "/f", "/pid", strconv.Itoa(pid))
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	return cmd.Run()
-}
-
-func handleAutoconfigureAI(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
-
-	cmd := exec.Command("docker", "start", "ollama")
-	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-	err := cmd.Run()
-	if err != nil {
-		cmdRun := exec.Command("docker", "run", "-d", "-v", "ollama:/root/.ollama", "-p", "11434:11434", "--name", "ollama", "ollama/ollama")
-		cmdRun.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
-		_ = cmdRun.Run()
-	}
-
-	time.Sleep(2 * time.Second)
-
-	go func() {
-		pullBody, _ := json.Marshal(map[string]interface{}{"name": "phi4-mini"})
-		client := &http.Client{Timeout: 10 * time.Minute}
-		resp, err := client.Post("http://localhost:11434/api/pull", "application/json", bytes.NewBuffer(pullBody))
-		if err == nil {
-			resp.Body.Close()
-		}
-	}()
-
-	config := loadConfig()
-	config.OllamaHost = "http://localhost:11434"
-	config.OllamaModel = "phi4-mini"
-	userHome, _ := os.UserHomeDir()
-	configPath := filepath.Join(userHome, ".powerterm.json")
-	if data, err := json.MarshalIndent(config, "", "  "); err == nil {
-		_ = os.WriteFile(configPath, data, 0644)
-	}
-
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"success": true,
-		"message": "AI Autoconfigure initiated! Started Ollama Docker container, triggered phi4-mini model pull in background, and saved local config.",
-	})
 }

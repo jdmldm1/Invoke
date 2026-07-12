@@ -1,81 +1,4 @@
-package main
-
-import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"net/http"
-	"os/exec"
-	"strconv"
-)
-
-type PortInfo struct {
-	Port        int    `json:"Port"`
-	PID         int    `json:"PID"`
-	ProcessName string `json:"ProcessName"`
-}
-
-func handlePorts(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json")
-
-	cmdText := `Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | ForEach-Object { [PSCustomObject]@{ Port = $_.LocalPort; PID = $_.OwningProcess; ProcessName = (Get-Process -Id $_.OwningProcess -ErrorAction SilentlyContinue).Name } } | ConvertTo-Json`
-
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-Command", cmdText)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		http.Error(w, fmt.Sprintf("Error fetching ports: %v, %s", err, stderr.String()), 500)
-		return
-	}
-
-	output := stdout.Bytes()
-	if len(bytes.TrimSpace(output)) == 0 {
-		w.Write([]byte("[]"))
-		return
-	}
-
-	w.Write(output)
-}
-
-func handlePortsKill(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Access-Control-Allow-Origin", "*")
-	w.Header().Set("Content-Type", "application/json")
-
-	pidStr := r.URL.Query().Get("pid")
-	if pidStr == "" {
-		http.Error(w, `{"error":"pid parameter required"}`, 400)
-		return
-	}
-
-	pid, err := strconv.Atoi(pidStr)
-	if err != nil {
-		http.Error(w, `{"error":"invalid pid"}`, 400)
-		return
-	}
-
-	cmdText := fmt.Sprintf("Stop-Process -Id %d -Force", pid)
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-Command", cmdText)
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
-		w.WriteHeader(500)
-		json.NewEncoder(w).Encode(map[string]string{"error": stderr.String()})
-		return
-	}
-
-	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
-}
-
-func handlePortsHTML(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write([]byte(portsHTMLTemplate))
-}
-
-const portsHTMLTemplate = `<!DOCTYPE html>
+<!DOCTYPE html>
 <html>
 <head>
     <meta charset="utf-8">
@@ -217,7 +140,6 @@ const portsHTMLTemplate = `<!DOCTYPE html>
                 .then(r => r.json())
                 .then(data => {
                     tbody.innerHTML = '';
-                    
                     let ports = [];
                     if (data) {
                         if (Array.isArray(data)) {
@@ -226,43 +148,33 @@ const portsHTMLTemplate = `<!DOCTYPE html>
                             ports = [data];
                         }
                     }
-
                     if (ports.length === 0) {
                         tbody.innerHTML = '<tr><td colspan="5" class="empty">No active listening ports found.</td></tr>';
                         return;
                     }
-
                     ports.sort((a, b) => a.Port - b.Port);
-
                     ports.forEach(p => {
                         const tr = document.createElement('tr');
-                        
                         const tdPort = document.createElement('td');
                         tdPort.style.fontWeight = 'bold';
                         tdPort.textContent = p.Port;
-                        
                         const tdPid = document.createElement('td');
                         tdPid.textContent = p.PID;
-                        
                         const tdName = document.createElement('td');
                         tdName.textContent = p.ProcessName || '(unknown)';
-                        
                         const tdStatus = document.createElement('td');
                         tdStatus.innerHTML = '<span class="status-tag">LISTENING</span>';
-                        
                         const tdAction = document.createElement('td');
                         const killBtn = document.createElement('button');
                         killBtn.className = 'btn-kill';
                         killBtn.textContent = 'Kill Process';
                         killBtn.onclick = () => killProcess(p.PID, p.Port, p.ProcessName);
                         tdAction.appendChild(killBtn);
-                        
                         tr.appendChild(tdPort);
                         tr.appendChild(tdPid);
                         tr.appendChild(tdName);
                         tr.appendChild(tdStatus);
                         tr.appendChild(tdAction);
-                        
                         tbody.appendChild(tr);
                     });
                 })
@@ -270,7 +182,6 @@ const portsHTMLTemplate = `<!DOCTYPE html>
                     tbody.innerHTML = '<tr><td colspan="5" class="empty" style="color:var(--bad)">Error loading ports: ' + err + '</td></tr>';
                 });
         }
-
         function killProcess(pid, port, name) {
             if (confirm('Are you sure you want to stop process ' + (name || '') + ' (PID: ' + pid + ') holding port ' + port + '?')) {
                 fetch('/ports/kill?pid=' + pid, { method: 'POST' })
@@ -284,9 +195,7 @@ const portsHTMLTemplate = `<!DOCTYPE html>
                     });
             }
         }
-
         window.onload = loadPorts;
     </script>
 </body>
 </html>
-`
