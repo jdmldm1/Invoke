@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>PowerTool Monaco Editor - {{.FileName}}</title>
+    <link rel="icon" type="image/png" href="/web/favicon.png" />
+    <style>
+        body { margin: 0; padding: 0; overflow: hidden; background-color: #000000; color: #d4d4d4; font-family: sans-serif; }
+        #header { height: 35px; background: #000000; display: flex; align-items: center; padding: 0 15px; justify-content: space-between; border-bottom: 1px solid #1a1a1a; }
+        #header .info { display: flex; align-items: center; gap: 10px; }
+        #header .info span { font-weight: bold; }
+        #header .status { color: #a855f7; font-size: 0.9em; opacity: 0; transition: opacity 0.3s; font-weight: bold; }
+        #container { height: calc(100vh - 35px); width: 100%; background-color: #000000; }
+    </style>
+    <script src="/web/vs/loader.js"></script>
+</head>
+<body>
+    <div id="header">
+        <div class="info">
+            <span>{{.FileName}}</span>
+            <span style="color: #666; font-size: 0.9em; font-weight: normal;">(Press Ctrl+S to save)</span>
+        </div>
+        <span class="status" id="status">Saved!</span>
+    </div>
+    <div id="container"></div>
+    <script>
+        const initialContent = {{.Content}};
+        require.config({ paths: { 'vs': '/web/vs' }});
+        require(['vs/editor/editor.main'], function() {
+            monaco.editor.defineTheme('badass-black', {
+                base: 'vs-dark',
+                inherit: true,
+                rules: [],
+                colors: {
+                    'editor.background': '#000000',
+                    'editorGutter.background': '#000000',
+                    'minimap.background': '#000000'
+                }
+            });
+
+            var editor = monaco.editor.create(document.getElementById('container'), {
+                value: initialContent,
+                language: getLanguage('{{.Ext}}'),
+                theme: 'badass-black',
+                automaticLayout: true,
+                minimap: { enabled: true }
+            });
+
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, function() {
+                saveContent(editor.getValue());
+            });
+
+            registerAIHoverProvider();
+            registerAIInlineCompletionsProvider();
+            registerAICompletionItemProvider();
+        });
+
+        function registerAICompletionItemProvider() {
+            const langId = getLanguage('{{.Ext}}');
+            monaco.languages.registerCompletionItemProvider(langId, {
+                triggerCharacters: ['.', ' ', '(', '{', '='],
+                provideCompletionItems: function(model, position, context, token) {
+                    return new Promise((resolve) => {
+                        const timer = setTimeout(() => {
+                            if (token.isCancellationRequested) {
+                                resolve(null);
+                                return;
+                            }
+                            const textBefore = model.getValueInRange({
+                                startLineNumber: Math.max(1, position.lineNumber - 30),
+                                startColumn: 1,
+                                endLineNumber: position.lineNumber,
+                                endColumn: position.column
+                            });
+                            if (textBefore.trim().length < 5) {
+                                resolve(null);
+                                return;
+                            }
+                            fetch('/ai-editor-complete', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    before: textBefore,
+                                    lang: langId
+                                })
+                            })
+                            .then(r => r.json())
+                            .then(data => {
+                                if (token.isCancellationRequested) {
+                                    resolve(null);
+                                    return;
+                                }
+                                if (data && data.completion && data.completion.trim()) {
+                                    resolve({
+                                        suggestions: [{
+                                            label: '🤖 AI: ' + data.completion.split('\n')[0],
+                                            kind: monaco.languages.CompletionItemKind.Snippet,
+                                            insertText: data.completion,
+                                            detail: 'AI Generated Completion',
+                                            documentation: data.completion,
+                                            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
+                                        }]
+                                    });
+                                } else {
+                                    resolve(null);
+                                }
+                            })
+                            .catch(() => resolve(null));
+                        }, 500);
+                        token.onCancellationRequested(() => {
+                            clearTimeout(timer);
+                            resolve(null);
+                        });
+                    });
+                }
+            });
+        }
+
+        function registerAIInlineCompletionsProvider() {
+            const langId = getLanguage('{{.Ext}}');
+            monaco.languages.registerInlineCompletionsProvider(langId, {
+                provideInlineCompletions: function(model, position, context, token) {
+                    return new Promise((resolve) => {
+                        const timer = setTimeout(() => {
+                            if (token.isCancellationRequested) {
+                                resolve(null);
+                                return;
+                            }
+                            const textBefore = model.getValueInRange({
+                                startLineNumber: Math.max(1, position.lineNumber - 50),
+                                startColumn: 1,
+                                endLineNumber: position.lineNumber,
+                                endColumn: position.column
+                            });
+                            if (textBefore.trim().length < 5) {
+                                resolve(null);
+                                return;
+                            }
+                            fetch('/ai-editor-complete', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    before: textBefore,
+                                    lang: langId
+                                })
+                            })
+                            .then(r => r.json())
+                            .then(data => {
+                                if (token.isCancellationRequested) {
+                                    resolve(null);
+                                    return;
+                                }
+                                if (data && data.completion) {
+                                    resolve({
+                                        items: [{
+                                            insertText: data.completion,
+                                            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
+                                        }]
+                                    });
+                                } else {
+                                    resolve(null);
+                                }
+                            })
+                            .catch(() => resolve(null));
+                        }, 800);
+                        token.onCancellationRequested(() => {
+                            clearTimeout(timer);
+                            resolve(null);
+                        });
+                    });
+                },
+                freeInlineCompletions: function() {}
+            });
+        }
+
+        function getLanguage(ext) {
+            switch(ext.toLowerCase()) {
+                case '.go': return 'go';
+                case '.js': return 'javascript';
+                case '.ts': return 'typescript';
+                case '.json': return 'json';
+                case '.html': return 'html';
+                case '.css': return 'css';
+                case '.md': return 'markdown';
+                case '.ps1': return 'powershell';
+                case '.py': return 'python';
+                case '.sh': return 'shell';
+                case '.xml': return 'xml';
+                case '.yaml': return 'yaml';
+                case '.yml': return 'yaml';
+                case '.sql': return 'sql';
+                default: return 'plaintext';
+            }
+        }
+
+        function saveContent(val) {
+            fetch('/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content: val })
+            }).then(res => {
+                if (res.ok) {
+                    const status = document.getElementById('status');
+                    status.style.opacity = '1';
+                    setTimeout(() => status.style.opacity = '0', 2000);
+                }
+            });
+        }
+
+        function registerAIHoverProvider() {
+            monaco.languages.getLanguages().forEach(function(lang) {
+                monaco.languages.registerHoverProvider(lang.id, {
+                    provideHover: function(model, position, token) {
+                        return new Promise((resolve) => {
+                            const timer = setTimeout(() => {
+                                if (token.isCancellationRequested) {
+                                    resolve(null);
+                                    return;
+                                }
+                                const wordInfo = model.getWordAtPosition(position);
+                                if (!wordInfo) {
+                                    resolve(null);
+                                    return;
+                                }
+                                const word = wordInfo.word;
+                                const line = model.getLineContent(position.lineNumber);
+                                const startLine = Math.max(1, position.lineNumber - 5);
+                                const endLine = Math.min(model.getLineCount(), position.lineNumber + 5);
+                                let context = "";
+                                for (let i = startLine; i <= endLine; i++) {
+                                    context += model.getLineContent(i) + "\n";
+                                }
+                                fetch('/ai-explain-hover', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        symbol: word,
+                                        line: line,
+                                        context: context,
+                                        lang: model.getLanguageId()
+                                    })
+                                })
+                                .then(r => r.json())
+                                .then(data => {
+                                    if (token.isCancellationRequested) {
+                                        resolve(null);
+                                        return;
+                                    }
+                                    if (data && data.explanation) {
+                                        resolve({
+                                            range: new monaco.Range(position.lineNumber, wordInfo.startColumn, position.lineNumber, wordInfo.endColumn),
+                                            contents: [
+                                                { value: '**🤖 AI Explains **' + word },
+                                                { value: data.explanation }
+                                            ]
+                                        });
+                                    } else {
+                                        resolve(null);
+                                    }
+                                })
+                                .catch(() => resolve(null));
+                            }, 300);
+                            token.onCancellationRequested(() => {
+                                clearTimeout(timer);
+                                resolve(null);
+                            });
+                        });
+                    }
+                });
+            });
+        }
+
+        window.addEventListener("beforeunload", function (e) {
+             fetch('/close', {method: 'POST'});
+        });
+    </script>
+</body>
+</html>

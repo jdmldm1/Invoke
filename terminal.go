@@ -202,7 +202,12 @@ func serveTerminalWindow() {
 			return
 		}
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write([]byte(terminalAppHTML))
+		htmlBytes, err := webFS.ReadFile("web/terminal_app.html")
+		if err != nil {
+			http.Error(w, "Template not found", 404)
+			return
+		}
+		w.Write(htmlBytes)
 	})
 	mux.Handle("/web/", http.FileServer(http.FS(webFS)))
 	mux.HandleFunc("/ws", handleTerminalWS)

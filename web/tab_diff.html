@@ -1,0 +1,98 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>__NAME__</title>
+<style>
+ html,body{margin:0;height:100%;background:#000000;font-family:'Segoe UI',sans-serif}
+ #h{height:30px;background:#000000;color:#e2e2e2;display:flex;align-items:center;gap:10px;padding:0 12px;font-size:13px;border-bottom:1px solid #1a1a1a}
+ #h b{color:#a855f7}
+ #h .leg{margin-left:auto;color:#888;font-size:12px}
+ #c{height:calc(100vh - 30px);background-color:#000000}
+</style>
+<script src="/web/vs/loader.js"></script>
+</head><body>
+<div id="h"><b>__NAME__</b><span>diff vs HEAD</span><span class="leg">left = HEAD, right = working copy</span></div>
+<div id="c"></div>
+<script>
+ const orig=__ORIGINAL__, mod=__MODIFIED__, lang=__LANG__;
+ require.config({paths:{vs:'/web/vs'}});
+ require(['vs/editor/editor.main'],function(){
+   monaco.editor.defineTheme('badass-black', {
+     base: 'vs-dark',
+     inherit: true,
+     rules: [],
+     colors: {
+       'editor.background': '#000000',
+       'editorGutter.background': '#000000',
+       'minimap.background': '#000000',
+       'diffEditor.inserted.background': '#a855f722',
+       'diffEditor.removed.background': '#bf616a22'
+     }
+   });
+   const de=monaco.editor.createDiffEditor(document.getElementById('c'),
+     {theme:'badass-black',automaticLayout:true,readOnly:true,originalEditable:false,renderSideBySide:true,minimap:{enabled:true}});
+   de.setModel({original:monaco.editor.createModel(orig,lang),modified:monaco.editor.createModel(mod,lang)});
+   
+   registerAIHoverProvider();
+ });
+
+ function registerAIHoverProvider() {
+      monaco.languages.getLanguages().forEach(function(lang) {
+          monaco.languages.registerHoverProvider(lang.id, {
+              provideHover: function(model, position, token) {
+                  return new Promise((resolve) => {
+                      const timer = setTimeout(() => {
+                          if (token.isCancellationRequested) {
+                              resolve(null);
+                              return;
+                          }
+                          const wordInfo = model.getWordAtPosition(position);
+                          if (!wordInfo) {
+                              resolve(null);
+                              return;
+                          }
+                          const word = wordInfo.word;
+                          const line = model.getLineContent(position.lineNumber);
+                          const startLine = Math.max(1, position.lineNumber - 5);
+                          const endLine = Math.min(model.getLineCount(), position.lineNumber + 5);
+                          let context = "";
+                          for (let i = startLine; i <= endLine; i++) {
+                              context += model.getLineContent(i) + "\n";
+                          }
+                          fetch('/ai-explain-hover', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({
+                                  symbol: word,
+                                  line: line,
+                                  context: context,
+                                  lang: model.getLanguageId()
+                              })
+                          })
+                          .then(r => r.json())
+                          .then(data => {
+                              if (token.isCancellationRequested) {
+                                  resolve(null);
+                                  return;
+                              }
+                              if (data && data.explanation) {
+                                  resolve({
+                                      range: new monaco.Range(position.lineNumber, wordInfo.startColumn, position.lineNumber, wordInfo.endColumn),
+                                      contents: [
+                                          { value: '**🤖 AI Explains **' + word },
+                                          { value: data.explanation }
+                                      ]
+                                  });
+                              } else {
+                                  resolve(null);
+                              }
+                          })
+                          .catch(() => resolve(null));
+                      }, 300);
+                      token.onCancellationRequested(() => {
+                          clearTimeout(timer);
+                          resolve(null);
+                      });
+                  });
+              }
+          });
+      });
+  }
+</script></body></html>
