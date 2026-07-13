@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -181,6 +182,42 @@ func openAppWindow(url string) {
 	openBrowser(url)
 }
 
+func handleExecBackground(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", 405)
+		return
+	}
+
+	var req struct {
+		Cmd string `json:"cmd"`
+		Cwd string `json:"cwd"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), 3*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "powershell", "-NoProfile", "-NonInteractive", "-Command", req.Cmd)
+	if req.Cwd != "" {
+		cmd.Dir = req.Cwd
+	}
+
+	output, err := cmd.CombinedOutput()
+	result := map[string]interface{}{
+		"output": string(output),
+		"error":  "",
+	}
+	if err != nil {
+		result["error"] = err.Error()
+	}
+
+	json.NewEncoder(w).Encode(result)
+}
+
 func serveTerminalWindow() {
 	addr := "127.0.0.1:0"
 	if p := os.Getenv("INVOKE_TERM_PORT"); p != "" {
@@ -257,6 +294,7 @@ func serveTerminalWindow() {
 	mux.HandleFunc("/scp", handleSCPPage)
 	mux.HandleFunc("/fs/tree", handleFSTree)
 	mux.HandleFunc("/ai-editor-complete", handleAIEditorComplete)
+	mux.HandleFunc("/exec-bg", handleExecBackground)
 
 	go func() {
 		zero := 0

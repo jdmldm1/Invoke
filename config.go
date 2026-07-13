@@ -214,6 +214,7 @@ func loadConfig() ConfigData {
 					}
 					ep.UseKey, _ = eMap["use_key"].(bool)
 					ep.EncPassword, _ = eMap["enc_password"].(string)
+					ep.AutoSudo, _ = eMap["auto_sudo"].(bool)
 					if ep.Name != "" && ep.Host != "" {
 						data.SSHEndpoints = append(data.SSHEndpoints, ep)
 					}

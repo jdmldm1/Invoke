@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
 <meta charset="utf-8">
 <title>Invoke</title>
@@ -82,6 +82,7 @@
   .divider.v{cursor:col-resize}
   .divider.h{cursor:row-resize}
 
+  /* Status bar */
   #footer{flex:0 0 26px;display:flex;align-items:center;gap:0;background:var(--panel);
     border-top:1px solid var(--border);padding:0 6px;font-size:12px;color:var(--muted)}
   #footer .seg{display:flex;align-items:center;gap:6px;padding:0 9px;height:100%;white-space:nowrap}
@@ -131,6 +132,7 @@
   .palette-item:hover,.palette-item.active{background:var(--accent);color:var(--ink)}
   .palette-item .shortcut{font-size:11px;opacity:.7}
 
+  /* Branch Manager Popup */
   .branch-popup{position:fixed;background:#181818;border:1px solid var(--border2);border-radius:8px;
     box-shadow:0 12px 32px rgba(0,0,0,.6);z-index:15000;width:240px;display:flex;flex-direction:column;overflow:hidden;font-size:12px}
   .branch-popup-head{padding:8px 10px;border-bottom:1px solid var(--border);font-weight:700;color:var(--muted);
@@ -147,6 +149,7 @@
   .branch-popup-add button{background:var(--accent);color:var(--ink);border:none;border-radius:4px;
     padding:4px 8px;cursor:pointer;font-weight:bold}
 
+  /* History Modal & Prompts Modal */
   .history-item{padding:8px 10px;border-radius:4px;cursor:pointer;font-family:'Cascadia Code',monospace;font-size:11px;
     white-space:nowrap;overflow:hidden;text-overflow:ellipsis;transition:all 0.1s}
   .history-item:hover{background:var(--panel2);color:var(--accent)}
@@ -326,7 +329,7 @@
     if (/^Session \d+$/.test(name)) {
       const newName = prompt('This session has not been named yet. Please enter a name for this session to associate the scratchpad:', name);
       if (!newName || !newName.trim()) {
-        return;
+        return; // cancelled
       }
       name = newName.trim();
       activeTab.name = name;
@@ -1084,10 +1087,9 @@
     }, 50);
   }
 
+  // ── Ghost Text Copilot ───────────────────────────────────────────────────────
   const ghostEl = document.getElementById('ghost-text');
   let ghostText = '';
-  let ghostSuggestions = [];
-  let ghostIndex = 0;
   let ghostTimer = null;
   let ghostAbort = null;
   let ghostActive = false;
@@ -1105,22 +1107,12 @@
 
   function getStaticCompletion(line) {
     const trimmed = line.trimStart();
-
     for (const [prefix, suffix] of Object.entries(STATIC_COMPLETIONS)) {
-      const cleanPrefix = prefix.trimEnd();
-
-      if (trimmed === cleanPrefix) {
-        return suffix;
-      }
-
-      if (trimmed.startsWith(cleanPrefix) && trimmed.length > cleanPrefix.length) {
-        const remainder = trimmed.substring(cleanPrefix.length);
-        if (suffix.startsWith(remainder)) {
-          return suffix.substring(remainder.length);
-        }
+      if (trimmed === prefix.trimEnd() || trimmed.startsWith(prefix.slice(0, -1))) {
+        if (prefix.endsWith(' ') && trimmed === prefix.trimEnd()) return suffix;
+        if (!prefix.endsWith(' ') && trimmed.startsWith(prefix.slice(0,-1)) && !trimmed.startsWith(prefix)) return suffix.slice(trimmed.length - prefix.length + 1);
       }
     }
-
     return '';
   }
 
@@ -1141,53 +1133,17 @@
     } catch(_) {}
   }
 
-  function showGhost(suggestions, pane) {
-    if (!suggestions || suggestions.length === 0) { hideGhost(); return; }
-
-    if (typeof suggestions === 'string') {
-      suggestions = [suggestions];
-    }
-
-    ghostSuggestions = suggestions.filter(s => s && s.length > 0);
-    if (ghostSuggestions.length === 0) { hideGhost(); return; }
-
-    ghostIndex = 0;
-    ghostText = ghostSuggestions[0];
+  function showGhost(text, pane) {
+    if (!text) { hideGhost(); return; }
+    ghostText = text;
     ghostActive = true;
-    updateGhostDisplay(pane);
-  }
-
-  function updateGhostDisplay(pane) {
-    if (!ghostActive || ghostSuggestions.length === 0) return;
-
-    ghostText = ghostSuggestions[ghostIndex];
-    const displayText = ghostSuggestions.length > 1
-      ? `${ghostText} [${ghostIndex + 1}/${ghostSuggestions.length}]`
-      : ghostText;
-
-    ghostEl.textContent = displayText;
+    ghostEl.textContent = text;
     ghostEl.style.display = 'block';
     positionGhost(pane);
   }
 
-  function cycleGhostNext(pane) {
-    if (!ghostActive || ghostSuggestions.length <= 1) return false;
-    ghostIndex = (ghostIndex + 1) % ghostSuggestions.length;
-    updateGhostDisplay(pane);
-    return true;
-  }
-
-  function cycleGhostPrev(pane) {
-    if (!ghostActive || ghostSuggestions.length <= 1) return false;
-    ghostIndex = (ghostIndex - 1 + ghostSuggestions.length) % ghostSuggestions.length;
-    updateGhostDisplay(pane);
-    return true;
-  }
-
   function hideGhost() {
     ghostText = '';
-    ghostSuggestions = [];
-    ghostIndex = 0;
     ghostActive = false;
     ghostEl.style.display = 'none';
     ghostEl.textContent = '';
@@ -1229,35 +1185,10 @@
   function requestGhostCompletion(pane, line) {
     clearTimeout(ghostTimer);
     if (ghostAbort) { try { ghostAbort.abort(); } catch(_){} ghostAbort = null; }
-
     const trimmed = line.trim();
     if (trimmed.length < 1) { hideGhost(); return; }
-
-    const suggestions = [];
-
-    const staticCompletion = getStaticCompletion(line);
-    if (staticCompletion) {
-      suggestions.push(staticCompletion);
-    }
-
-    const contextMatches = getContextAwareSuggestions(trimmed, pane);
-    contextMatches.forEach(match => {
-      if (suggestions.length < 8 && !suggestions.includes(match)) {
-        suggestions.push(match);
-      }
-    });
-
-    const historicalMatches = getHistoricalCompletions(trimmed);
-    historicalMatches.forEach(match => {
-      if (suggestions.length < 8 && !suggestions.includes(match)) {
-        suggestions.push(match);
-      }
-    });
-
-    if (suggestions.length > 0) {
-      showGhost(suggestions, pane);
-    }
-
+    const staticFb = getStaticCompletion(line);
+    if (staticFb) showGhost(staticFb, pane);
     ghostTimer = setTimeout(() => {
       const ctrl = new AbortController();
       ghostAbort = ctrl;
@@ -1270,287 +1201,18 @@
       .then(r => r.json())
       .then(d => {
         if (d.completion && d.completion.length > 0) {
-          const allSuggestions = [...suggestions];
-          if (!allSuggestions.includes(d.completion)) {
-            allSuggestions.unshift(d.completion);
-          }
-          showGhost(allSuggestions, pane);
-        } else if (suggestions.length === 0) {
+          showGhost(d.completion, pane);
+        } else if (!staticFb) {
           hideGhost();
         }
       })
       .catch(() => {
-        if (suggestions.length === 0) hideGhost();
+        if (!staticFb) hideGhost();
       });
     }, 250);
   }
 
-  let contextCache = {
-    dockerImages: [],
-    dockerContainers: [],
-    gitBranches: [],
-    lastUpdate: {}
-  };
-
-  function getContextAwareSuggestions(line, pane) {
-    const suggestions = [];
-    console.log('[Context] getContextAwareSuggestions called with line:', JSON.stringify(line));
-
-    const cleanLine = line.replace(/^[❯$#>]\s*/, '').trim();
-    console.log('[Context] cleanLine after removing prompt:', JSON.stringify(cleanLine));
-
-    if (cleanLine.startsWith('docker run ')) {
-      const partial = cleanLine.substring(11).trim();
-      console.log('[Context] Looking for docker images starting with:', partial);
-
-      fetchDockerImages(pane).then(images => {
-        const currentLine = getCurrentInputLine(pane);
-        const currentClean = currentLine.replace(/^[❯$#>]\s*/, '').trim();
-        console.log('[Context] Async results arrived, current line:', currentClean);
-
-        if (images && images.length > 0 && currentClean.startsWith('docker run ')) {
-          const currentPartial = currentClean.substring(11).trim();
-          const matches = images.filter(img => img.toLowerCase().startsWith(currentPartial.toLowerCase()));
-          console.log('[Context] Found', matches.length, 'matching images for:', currentPartial);
-
-          if (matches.length > 0) {
-            const newSuggestions = matches.slice(0, 5).map(img => img.substring(currentPartial.length));
-            if (newSuggestions.length > 0) {
-              if (ghostActive) {
-                const currentSuggestions = [...ghostSuggestions];
-                newSuggestions.forEach(s => {
-                  if (!currentSuggestions.includes(s)) {
-                    currentSuggestions.push(s);
-                  }
-                });
-                showGhost(currentSuggestions, pane);
-              } else {
-                showGhost(newSuggestions, pane);
-              }
-            }
-          }
-        }
-      });
-
-      contextCache.dockerImages.forEach(img => {
-        if (img.toLowerCase().startsWith(partial.toLowerCase())) {
-          const completion = img.substring(partial.length);
-          if (completion) {
-            suggestions.push(completion);
-          }
-        }
-      });
-    }
-    else if (cleanLine.startsWith('docker exec ')) {
-      const partial = cleanLine.substring(12);
-      console.log('[Context] Looking for docker containers starting with:', partial);
-
-      fetchDockerContainers(pane).then(containers => {
-        const currentLine = getCurrentInputLine(pane);
-        const currentClean = currentLine.replace(/^[❯$#>]\s*/, '').trim();
-        console.log('[Context] Async containers arrived, current line:', currentClean);
-
-        if (containers && containers.length > 0 && currentClean.startsWith('docker exec ')) {
-          const currentPartial = currentClean.substring(12);
-          const matches = containers.filter(c => c.startsWith(currentPartial));
-          console.log('[Context] Found', matches.length, 'matching containers for:', currentPartial);
-
-          if (matches.length > 0) {
-            const newSuggestions = matches.slice(0, 5).map(c => c.substring(currentPartial.length) + ' ');
-            if (newSuggestions.length > 0) {
-              if (ghostActive) {
-                const currentSuggestions = [...ghostSuggestions];
-                newSuggestions.forEach(s => {
-                  if (!currentSuggestions.includes(s)) {
-                    currentSuggestions.push(s);
-                  }
-                });
-                showGhost(currentSuggestions, pane);
-              } else {
-                showGhost(newSuggestions, pane);
-              }
-            }
-          }
-        }
-      });
-
-      contextCache.dockerContainers.forEach(container => {
-        if (container.startsWith(partial)) {
-          suggestions.push(container.substring(partial.length) + ' ');
-        }
-      });
-    }
-    else if (cleanLine.startsWith('git checkout ')) {
-      const partial = cleanLine.substring(13);
-      console.log('[Context] Looking for git branches starting with:', partial);
-
-      fetchGitBranches(pane).then(branches => {
-        const currentLine = getCurrentInputLine(pane);
-        const currentClean = currentLine.replace(/^[❯$#>]\s*/, '').trim();
-        console.log('[Context] Async branches arrived, current line:', currentClean);
-
-        if (branches && branches.length > 0 && currentClean.startsWith('git checkout ')) {
-          const currentPartial = currentClean.substring(13);
-          const matches = branches.filter(b => b.startsWith(currentPartial));
-          console.log('[Context] Found', matches.length, 'matching branches for:', currentPartial);
-
-          if (matches.length > 0) {
-            const newSuggestions = matches.slice(0, 5).map(b => b.substring(currentPartial.length));
-            if (newSuggestions.length > 0) {
-              if (ghostActive) {
-                const currentSuggestions = [...ghostSuggestions];
-                newSuggestions.forEach(s => {
-                  if (!currentSuggestions.includes(s)) {
-                    currentSuggestions.push(s);
-                  }
-                });
-                showGhost(currentSuggestions, pane);
-              } else {
-                showGhost(newSuggestions, pane);
-              }
-            }
-          }
-        }
-      });
-
-      contextCache.gitBranches.forEach(branch => {
-        if (branch.startsWith(partial)) {
-          suggestions.push(branch.substring(partial.length));
-        }
-      });
-    }
-    else if (cleanLine.startsWith('ssh ') && cleanLine.length > 4) {
-      const partial = cleanLine.substring(4);
-      if (window._sshEPs) {
-        window._sshEPs.forEach(ep => {
-          const fullHost = `${ep.user}@${ep.host}`;
-          if (fullHost.startsWith(partial)) {
-            suggestions.push(fullHost.substring(partial.length));
-          }
-        });
-      }
-    }
-    else if (cleanLine.match(/^(docker|git|kubectl|npm)\s+\w*$/)) {
-      suggestions.push(...getCommonFlags(cleanLine));
-    }
-
-    return suggestions;
-  }
-
-  function fetchDockerImages(pane) {
-    const cacheKey = 'dockerImages';
-    if (contextCache.lastUpdate[cacheKey] && Date.now() - contextCache.lastUpdate[cacheKey] < 30000) {
-      return Promise.resolve(contextCache.dockerImages);
-    }
-
-    return fetch('/exec-bg', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({cmd: 'docker images --format "{{.Repository}}:{{.Tag}}"', cwd: pane.cwd || ''})
-    })
-    .then(r => r.json())
-    .then(d => {
-      if (d.output) {
-        contextCache.dockerImages = d.output.trim().split('\n').filter(l => l && l !== '<none>:<none>');
-        contextCache.lastUpdate[cacheKey] = Date.now();
-        console.log('[Context] Docker images cached:', contextCache.dockerImages.length, 'images');
-      }
-      return contextCache.dockerImages;
-    })
-    .catch(err => {
-      console.error('[Context] Docker images fetch failed:', err);
-      return [];
-    });
-  }
-
-  function fetchDockerContainers(pane) {
-    const cacheKey = 'dockerContainers';
-    if (contextCache.lastUpdate[cacheKey] && Date.now() - contextCache.lastUpdate[cacheKey] < 10000) {
-      return Promise.resolve(contextCache.dockerContainers);
-    }
-
-    return fetch('/exec-bg', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({cmd: 'docker ps --format "{{.Names}}"', cwd: pane.cwd || ''})
-    })
-    .then(r => r.json())
-    .then(d => {
-      if (d.output) {
-        contextCache.dockerContainers = d.output.trim().split('\n').filter(l => l);
-        contextCache.lastUpdate[cacheKey] = Date.now();
-        console.log('[Context] Docker containers cached:', contextCache.dockerContainers.length, 'containers');
-      }
-      return contextCache.dockerContainers;
-    })
-    .catch(err => {
-      console.error('[Context] Docker containers fetch failed:', err);
-      return [];
-    });
-  }
-
-  function fetchGitBranches(pane) {
-    const cacheKey = 'gitBranches';
-    if (contextCache.lastUpdate[cacheKey] && Date.now() - contextCache.lastUpdate[cacheKey] < 30000) {
-      return Promise.resolve(contextCache.gitBranches);
-    }
-
-    return fetch('/exec-bg', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({cmd: 'git branch --format="%(refname:short)"', cwd: pane.cwd || ''})
-    })
-    .then(r => r.json())
-    .then(d => {
-      if (d.output) {
-        contextCache.gitBranches = d.output.trim().split('\n').filter(l => l);
-        contextCache.lastUpdate[cacheKey] = Date.now();
-        console.log('[Context] Git branches cached:', contextCache.gitBranches.length, 'branches');
-      }
-      return contextCache.gitBranches;
-    })
-    .catch(err => {
-      console.error('[Context] Git branches fetch failed:', err);
-      return [];
-    });
-  }
-
-  function getCommonFlags(line) {
-    const flags = {
-      'docker': ['--help', '--version', 'ps', 'run', 'exec', 'images', 'build', 'pull', 'push', 'logs', 'stop', 'rm'],
-      'git': ['--help', 'status', 'add', 'commit', 'push', 'pull', 'checkout', 'branch', 'log', 'diff', 'merge'],
-      'kubectl': ['--help', 'get', 'describe', 'logs', 'exec', 'apply', 'delete', 'create'],
-      'npm': ['--help', 'install', 'run', 'test', 'build', 'start', 'publish']
-    };
-
-    const words = line.trim().split(/\s+/);
-    const cmd = words[0];
-    const partial = words[1] || '';
-
-    if (flags[cmd]) {
-      return flags[cmd]
-        .filter(flag => flag.startsWith(partial))
-        .map(flag => flag.substring(partial.length));
-    }
-
-    return [];
-  }
-
-  function getHistoricalCompletions(prefix) {
-    const matches = [];
-    const lowerPrefix = prefix.toLowerCase();
-
-    for (const cmd of customSuggestions) {
-      if (cmd.toLowerCase().startsWith(lowerPrefix) && cmd !== prefix) {
-        const completion = cmd.substring(prefix.length);
-        matches.push(completion);
-        if (matches.length >= 3) break;
-      }
-    }
-
-    return matches;
-  }
-
+  // ── Layout Presets ──────────────────────────────────────────────────────────
   function saveLayout() {
     const name = prompt('Save layout as:');
     if (!name || !name.trim()) return;
@@ -1623,6 +1285,7 @@
       });
   }
 
+  // ── Command Palette ────────────────────────────────────────────────────────
   let paletteActive = false;
   let paletteItems = [];
   let filteredPalette = [];
@@ -1755,6 +1418,7 @@
     if (e.target === paletteEl) closePalette();
   };
 
+  // ── Sidebar Workspace Explorer & Task Launcher ─────────────────────────────
   let sidebarCollapsed = true;
   let sidebarDir = '';
 
@@ -1922,6 +1586,7 @@
       });
   }
 
+  // ---- actions ----
   function sendToActive(cmd){ 
     if(activePane){ 
       if (cmd.includes('{') && cmd.includes('}')) {
@@ -1995,13 +1660,13 @@
     const pane = activePane;
 
     try {
-
+      // Modern Clipboard API - works with external sources
       const text = await navigator.clipboard.readText();
       if (text) {
         pane.term.paste(text);
       }
     } catch (err) {
-
+      // Fallback: try event-based paste for older browsers or permission issues
       const handler = function(e) {
         document.removeEventListener('paste', handler, true);
         const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
@@ -2011,6 +1676,7 @@
       };
       document.addEventListener('paste', handler, true);
 
+      // Trigger paste event through focus
       const tempInput = document.createElement('textarea');
       tempInput.style.position = 'fixed';
       tempInput.style.opacity = '0';
@@ -2035,13 +1701,12 @@
     updateFooter();
   }
 
+  // ---- menus ----
   const MENUS={
     Session:[
       {label:'New Tab', key:'Ctrl+Shift+T', action:function(){newTab();}},
       {label:'Duplicate Tab (same dir)', action:function(){duplicateTab();}},
       {label:'Rename Tab', action:function(){ if(activeTab&&activeTab.type==='term') renameTab(activeTab); }},
-      {sep:true},
-      {label:'Send Interrupt (Ctrl+C)', key:'Ctrl+C', action:function(){ if(activePane) activePane.term.input('\x03', false); }},
       {sep:true},
       {label:'Recent Sessions', submenu:[]},
       {sep:true},
@@ -2156,6 +1821,7 @@
     document.addEventListener('click',closeMenus);
   }
 
+  // ---- keyboard ----
   function keyHandler(e){
     if(e.type!=='keydown') return true;
 
@@ -2175,6 +1841,7 @@
     const el = document.getElementById('term-suggest');
     const suggestVisible = el && el.style.display === 'block';
 
+    // 1. AI Command Prefiller (Ctrl+Space)
     if (e.ctrlKey && (e.key === ' ' || e.code === 'Space' || e.keyCode === 32)) {
       if (activePane) {
         const term = activePane.term;
@@ -2244,6 +1911,7 @@
       return false;
     }
 
+    // 2. Interactive Alias Expander (Tab)
     if (e.key === 'Tab' && !e.shiftKey && !e.ctrlKey && !e.altKey && !suggestVisible) {
       if (activePane) {
         const term = activePane.term;
@@ -2295,17 +1963,6 @@
     }
 
     if (ghostActive) {
-      if (e.key === 'Tab') {
-        if (e.shiftKey) {
-          if (cycleGhostPrev(activePane)) {
-            return false;
-          }
-        } else {
-          if (cycleGhostNext(activePane)) {
-            return false;
-          }
-        }
-      }
       if (e.key === 'ArrowRight' || e.key === 'End') {
         return !acceptGhost(activePane);
       }
@@ -2333,25 +1990,20 @@
     }
     if(e.ctrlKey && !e.shiftKey && !e.altKey){
       const k=e.key.toLowerCase();
-
+      // Ctrl+C: Copy if text selected, otherwise send interrupt
       if(k === 'c'){
-        if(activePane){
-          if(activePane.term.hasSelection()){
-            copyActive();
-          } else {
-            activePane.term.input('\x03', false);
-          }
+        if(activePane && activePane.term.hasSelection()){
+          copyActive();
+          return false;
         }
-        e.preventDefault();
-        e.stopPropagation();
-        return false;
+        return true; // Let Ctrl+C send interrupt signal
       }
-
+      // Ctrl+V: Always paste
       if(k === 'v'){
         pasteActive();
         return false;
       }
-
+      // Zoom controls
       if(e.key==='='||e.key==='+'){ zoom(1); return false; }
       if(e.key==='-'||e.key==='_'){ zoom(-1); return false; }
       if(e.key==='0'){ zoom(0); return false; }
@@ -2376,6 +2028,7 @@
       const self=this;
       this.el.addEventListener('contextmenu',function(e){ e.preventDefault(); setActive(self); showCtxMenu(self, e.clientX, e.clientY); });
 
+      // Drag and drop support for text
       this.host.addEventListener('dragover', function(e) {
         e.preventDefault();
         e.dataTransfer.dropEffect = 'copy';
@@ -3075,7 +2728,7 @@
     let passwordSent = false;
     let sudoSent = false;
     let attempts = 0;
-    const maxAttempts = 150;
+    const maxAttempts = 150; // 30 seconds
 
     const checkInterval = setInterval(() => {
       attempts++;
@@ -3083,6 +2736,7 @@
         const buf = pane.term.buffer.active;
         const currentLine = buf.cursorY + buf.baseY;
 
+        // Check last few lines for password prompt
         for (let i = Math.max(0, currentLine - 3); i <= currentLine; i++) {
           const line = buf.getLine(i);
           if (!line) continue;
@@ -3090,6 +2744,7 @@
           const lineText = line.translateToString();
           const lowerLine = lineText.toLowerCase();
 
+          // Detect password prompt
           if (!passwordSent && password && lowerLine.includes('password')) {
             console.log('[SSH] Password prompt detected on line', i, ':', lineText);
             pane.send({t:'i', d: password + '\r'});
@@ -3097,14 +2752,16 @@
             console.log('[SSH] Password sent');
           }
 
+          // Detect shell prompt after login (but not if already root)
           if (!sudoSent && autoSudo && passwordSent &&
               !lineText.includes('root@') &&
               (lineText.includes('$') || lineText.includes('~'))) {
             console.log('[SSH] User shell prompt detected, running sudo su');
-            sudoSent = true;
+            sudoSent = true; // Set flag immediately to prevent multiple triggers
             setTimeout(() => {
               pane.send({t:'i', d: 'sudo su\r'});
 
+              // Watch for sudo password
               let sudoAttempts = 0;
               const sudoInterval = setInterval(() => {
                 sudoAttempts++;
@@ -3121,6 +2778,7 @@
           }
         }
 
+        // Stop when done or timeout
         if ((passwordSent || !password) && (sudoSent || !autoSudo) || attempts >= maxAttempts) {
           clearInterval(checkInterval);
           console.log('[SSH] Auto-password handler stopped. Sent:', passwordSent, 'Sudo:', sudoSent);

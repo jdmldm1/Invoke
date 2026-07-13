@@ -22,6 +22,7 @@ type SSHEndpoint struct {
 	Port        int    `json:"port"`
 	UseKey      bool   `json:"use_key"`
 	EncPassword string `json:"enc_password,omitempty"`
+	AutoSudo    bool   `json:"auto_sudo,omitempty"`
 }
 
 type FSNode struct {
@@ -191,8 +192,9 @@ func handleSSHConnect(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]interface{}{
-		"cmd":      cmd,
-		"password": decryptSSHPassword(ep.EncPassword),
+		"cmd":       cmd,
+		"password":  decryptSSHPassword(ep.EncPassword),
+		"auto_sudo": ep.AutoSudo,
 	})
 }
 
