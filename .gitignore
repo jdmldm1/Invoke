@@ -18,6 +18,11 @@ coverage.txt
 *.swp
 *.swo
 *.orig
+*~
+
+# Build output (build.ps1 populates this; the pipeline builds it, not git)
+/build/
+
 # OS metadata
 Thumbs.db
 .DS_Store

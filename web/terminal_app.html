@@ -41,10 +41,16 @@
   .ctxmenu{position:fixed;min-width:215px;background:#202020;border:1px solid var(--border2);
     border-radius:8px;box-shadow:0 12px 34px rgba(0,0,0,.6);padding:6px;z-index:200}
 
-  #tabs{display:flex;align-items:stretch;gap:2px;overflow-x:auto;flex:1;margin-left:6px}
-  .tab{display:flex;align-items:center;gap:8px;padding:0 12px;min-width:120px;max-width:220px;
+  #tabs{display:flex;align-items:stretch;gap:2px;overflow-x:auto;overflow-y:hidden;flex:1;margin-left:6px;
+    scrollbar-width:thin;scrollbar-color:var(--border2) transparent}
+  #tabs::-webkit-scrollbar{height:5px}
+  #tabs::-webkit-scrollbar-track{background:transparent}
+  #tabs::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+  #tabs::-webkit-scrollbar-thumb:hover{background:var(--muted)}
+  .tab{display:flex;align-items:center;gap:8px;padding:0 12px;flex:0 0 var(--tab-w,160px);width:var(--tab-w,160px);
+    min-width:64px;max-width:220px;overflow:hidden;
     color:var(--muted);cursor:pointer;border-top:2px solid transparent;font-size:13px;white-space:nowrap}
-  .tab.tab-narrow{min-width:42px;max-width:42px;padding:0 6px;justify-content:center}
+  .tab.tab-narrow{flex:0 0 42px;width:42px;min-width:42px;max-width:42px;padding:0 6px;justify-content:center}
   .tab.tab-narrow .x{display:none}
   .tab:hover{background:var(--panel2)}
   .tab.active{color:var(--text);background:var(--bg);border-top-color:var(--accent)}
@@ -2041,7 +2047,7 @@
       {label:'Duplicate Tab (same dir)', action:function(){duplicateTab();}},
       {label:'Rename Tab', action:function(){ if(activeTab&&activeTab.type==='term') renameTab(activeTab); }},
       {sep:true},
-      {label:'Send Interrupt (Ctrl+C)', key:'Ctrl+C', action:function(){ if(activePane) activePane.term.input('\x03', false); }},
+      {label:'Send Interrupt (Ctrl+C)', key:'Ctrl+C', action:function(){ if(activePane) activePane.send({t:'i', d:'\x03'}); }},
       {sep:true},
       {label:'Recent Sessions', submenu:[]},
       {sep:true},
@@ -2339,7 +2345,7 @@
           if(activePane.term.hasSelection()){
             copyActive();
           } else {
-            activePane.term.input('\x03', false);
+            activePane.send({t:'i', d:'\x03'});
           }
         }
         e.preventDefault();
@@ -2399,7 +2405,7 @@
           const lineY = buffer.cursorY + buffer.baseY - 1;
           if (lineY >= 0) {
             const lineText = buffer.getLine(lineY).translateToString();
-            const lastPromptIdx = Math.max(lineText.lastIndexOf('>'), lineText.lastIndexOf('$'), lineText.lastIndexOf('#'));
+            const lastPromptIdx = Math.max(lineText.lastIndexOf('>'), lineText.lastIndexOf('$'), lineText.lastIndexOf('#'), lineText.lastIndexOf('❯'), lineText.lastIndexOf('›'));
             let cmd = '';
             if (lastPromptIdx >= 0) {
               cmd = lineText.substring(lastPromptIdx + 1).trim();
@@ -2422,7 +2428,7 @@
             const lineStr = buf.getLine(buf.cursorY + buf.baseY);
             if (lineStr) {
               const fullLine = lineStr.translateToString().trimEnd();
-              const lastPromptIdx = Math.max(fullLine.lastIndexOf('>'), fullLine.lastIndexOf('$'), fullLine.lastIndexOf('#'));
+              const lastPromptIdx = Math.max(fullLine.lastIndexOf('>'), fullLine.lastIndexOf('$'), fullLine.lastIndexOf('#'), fullLine.lastIndexOf('❯'), fullLine.lastIndexOf('›'));
               const currentInput = lastPromptIdx >= 0 ? fullLine.substring(lastPromptIdx + 1) : fullLine;
               if (currentInput.trim().length >= 1) {
                 requestGhostCompletion(self, currentInput.trimStart());
@@ -2582,6 +2588,14 @@
     updateFooter();
   }
 
+  function fitTabs(){
+    const n=tabsEl.children.length; if(!n) return;
+    const avail=tabsEl.clientWidth || tabsEl.getBoundingClientRect().width;
+    const ideal=Math.floor((avail-(n-1)*2)/n);
+    const w=Math.max(64,Math.min(160,ideal));
+    tabsEl.style.setProperty('--tab-w', w+'px');
+  }
+
   function buildTabButton(tab,label){
     const t=document.createElement('div'); t.className='tab' + (tab.viewType==='chat'?' tab-narrow':'');
     const nm=document.createElement('span'); nm.className='name'; nm.textContent=label;
@@ -2596,6 +2610,7 @@
     t.addEventListener('dblclick',ev=>{ if(ev.target!==x && tab.type==='term') renameTab(tab); });
     x.addEventListener('click',ev=>{ ev.stopPropagation(); closeTab(tab); });
     tabsEl.appendChild(t);
+    fitTabs();
   }
 
   function newTab(name, cwd, scratchOpen, chatOpen){
@@ -2765,6 +2780,7 @@
       return;
     }
     if(activeTab===tab) selectTab(tabs[Math.max(0,tabs.length-1)]);
+    fitTabs();
     updateFooter();
     saveSessionState(true);
   }
@@ -2893,7 +2909,7 @@
   document.getElementById('segBranch').addEventListener('click', () => {
     toggleGitBranchManagerPopup();
   });
-  window.addEventListener('resize',()=>{ if(activeTab&&activeTab.type==='term') activeTab.panes.forEach(p=>p.doFit()); });
+  window.addEventListener('resize',()=>{ if(activeTab&&activeTab.type==='term') activeTab.panes.forEach(p=>p.doFit()); fitTabs(); });
   window.addEventListener('beforeunload', () => {
     const last = tabs.filter(t => t.type === 'term').map(t => {
       let cwd = '';
@@ -2996,24 +3012,24 @@
     const buffer = pane.term.buffer.active;
     const lineY = buffer.cursorY + buffer.baseY;
     const lineText = buffer.getLine(lineY).translateToString();
-    
-    const lastPromptIdx = Math.max(lineText.lastIndexOf('>'), lineText.lastIndexOf('$'), lineText.lastIndexOf('#'));
+
+    const lastPromptIdx = Math.max(lineText.lastIndexOf('>'), lineText.lastIndexOf('$'), lineText.lastIndexOf('#'), lineText.lastIndexOf('❯'), lineText.lastIndexOf('›'));
     let input = '';
     if (lastPromptIdx >= 0) {
       input = lineText.substring(lastPromptIdx + 1).trim();
     } else {
       input = lineText.trim();
     }
-    
+
     currentSuggestInput = input;
     if (!input || input.length < 1) {
       hideSuggest();
       return;
     }
-    
+
     const all = Array.from(new Set(customSuggestions.concat(defaultSuggestions)));
     matchingSuggestions = all.filter(s => s.toLowerCase().startsWith(input.toLowerCase()) && s.toLowerCase() !== input.toLowerCase());
-    
+
     if (matchingSuggestions.length === 0) {
       hideSuggest();
       return;
@@ -3044,15 +3060,16 @@
     });
     
     try {
-      const cellWidth = pane.term._core._renderService.dimensions.actualCellWidth;
-      const cellHeight = pane.term._core._renderService.dimensions.actualCellHeight;
+      const screen = pane.term.element && pane.term.element.querySelector('.xterm-screen');
+      const cellWidth = screen ? screen.clientWidth / (pane.term.cols || 80) : 9;
+      const cellHeight = screen ? screen.clientHeight / (pane.term.rows || 24) : 18;
       const termRect = pane.host.getBoundingClientRect();
-      
+
       const left = termRect.left + (pane.term.buffer.active.cursorX * cellWidth);
       const top = termRect.top + ((pane.term.buffer.active.cursorY + 1) * cellHeight);
-      
-      el.style.left = left + 'px';
-      el.style.top = top + 'px';
+
+      el.style.left = Math.round(left) + 'px';
+      el.style.top = Math.round(top) + 'px';
       el.style.display = 'block';
     } catch (_) {
       el.style.display = 'none';

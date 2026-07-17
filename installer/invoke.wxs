@@ -8,7 +8,7 @@
   <Package
     Name="Invoke"
     Manufacturer="Invoke"
-    Version="!(bind.FileVersion.invoke_app_exe)"
+    Version="1.0.0.0"
     UpgradeCode="4B7E1F2A-3C6D-4E8F-9A0B-1D2E3F4A5B6C"
     Scope="perUser"
     Compressed="yes">
@@ -57,6 +57,16 @@
         <File Id="invoke_server_exe"
               Name="invoke-server.exe"
               Source="build\invoke-server.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <!-- invoke.ps1 — dot-sourced by each pane's shell for the custom
+           prompt, aliases, and inline AI helpers; required alongside the
+           exes at runtime (server.go resolves it relative to the exe path). -->
+      <Component Id="InvokeScript">
+        <File Id="invoke_ps1"
+              Name="invoke.ps1"
+              Source="build\invoke.ps1"
               KeyPath="yes" />
       </Component>
 

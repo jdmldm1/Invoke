@@ -30,11 +30,11 @@ if (-not (Test-Path $BuildDir)) {
 Write-Host "Building invoke-app.exe..." -ForegroundColor Yellow
 Push-Location (Join-Path $ProjectRoot "cmd\invoke-app")
 try {
-    go build -o (Join-Path $BuildDir "invoke-app.exe") .
+    go build -ldflags "-H windowsgui" -o (Join-Path $BuildDir "invoke-app.exe") .
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to build invoke-app.exe"
     }
-    Write-Host "✓ invoke-app.exe built successfully" -ForegroundColor Green
+    Write-Host "[OK] invoke-app.exe built successfully" -ForegroundColor Green
 } finally {
     Pop-Location
 }
@@ -42,11 +42,11 @@ try {
 Write-Host "Building invoke-server.exe (powerterm)..." -ForegroundColor Yellow
 Push-Location $ProjectRoot
 try {
-    go build -o (Join-Path $BuildDir "invoke-server.exe") .
+    go build -ldflags "-H windowsgui" -o (Join-Path $BuildDir "invoke-server.exe") .
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to build invoke-server.exe"
     }
-    Write-Host "✓ invoke-server.exe built successfully" -ForegroundColor Green
+    Write-Host "[OK] invoke-server.exe built successfully" -ForegroundColor Green
 } finally {
     Pop-Location
 }
@@ -55,9 +55,9 @@ Write-Host "Copying invoke.ps1 to build directory..." -ForegroundColor Yellow
 $InvokeScript = Join-Path $ProjectRoot "invoke.ps1"
 if (Test-Path $InvokeScript) {
     Copy-Item $InvokeScript -Destination $BuildDir -Force
-    Write-Host "✓ invoke.ps1 copied" -ForegroundColor Green
+    Write-Host "[OK] invoke.ps1 copied" -ForegroundColor Green
 } else {
-    Write-Host "⚠ invoke.ps1 not found, skipping" -ForegroundColor Yellow
+    Write-Host "[WARN] invoke.ps1 not found, skipping" -ForegroundColor Yellow
 }
 
 if (-not $SkipMSI) {
@@ -66,7 +66,7 @@ if (-not $SkipMSI) {
 
     $WixPath = (Get-Command wix.exe -ErrorAction SilentlyContinue).Path
     if (-not $WixPath) {
-        Write-Host "⚠ WiX toolset not found in PATH" -ForegroundColor Yellow
+        Write-Host "[WARN] WiX toolset not found in PATH" -ForegroundColor Yellow
         Write-Host "  Install WiX v4: dotnet tool install --global wix" -ForegroundColor Gray
         Write-Host "  Skipping MSI build" -ForegroundColor Yellow
     } else {
@@ -87,7 +87,7 @@ if (-not $SkipMSI) {
                 throw "WiX build failed"
             }
 
-            Write-Host "✓ MSI installer created: $MsiOutput" -ForegroundColor Green
+            Write-Host "[OK] MSI installer created: $MsiOutput" -ForegroundColor Green
         } finally {
             Pop-Location
         }
