@@ -96,6 +96,9 @@
   #footer .seg .lbl{color:var(--muted)}
   #footer #fCwd{max-width:380px;overflow:hidden;text-overflow:ellipsis}
   #footer #fBranch{color:var(--warn)}
+  #footer #segShell{cursor:pointer}
+  #footer #segShell:hover{background:rgba(255,255,255,0.04)}
+  #footer #fShell::after{content:'▾';margin-left:4px;font-size:9px;opacity:.6}
   #footer .spacer{flex:1}
   #footer kbd{background:var(--panel2);border:1px solid var(--border2);border-radius:4px;
     padding:0 5px;color:var(--text);font-size:11px}
@@ -237,6 +240,7 @@
     <div class="seg b"><span id="fSession">-</span></div>
     <div class="seg" id="segCwd"><span class="lbl">cwd</span><span id="fCwd"></span></div>
     <div class="seg" id="segBranch"><span id="fBranch"></span></div>
+    <div class="seg" id="segShell" title="Shell type for autocomplete suggestions — click to change"><span id="fShell"></span></div>
     <div class="seg" id="segError"><span id="fError" title="Click to diagnose error with AI"></span></div>
     <div class="spacer"></div>
     <div class="seg warn" id="segBroadcast"><span id="fBroadcast"></span></div>
@@ -1083,6 +1087,62 @@
         if (branchPopup && !branchPopup.contains(e.target) && !badge.contains(e.target)) {
           if (branchPopup && branchPopup.parentNode) branchPopup.parentNode.removeChild(branchPopup);
           branchPopup = null;
+          document.removeEventListener('click', handleOutsideClick);
+        }
+      };
+      document.addEventListener('click', handleOutsideClick);
+    }, 50);
+  }
+
+  let shellKindPopup = null;
+  function toggleShellKindPopup() {
+    if (shellKindPopup) {
+      if (shellKindPopup.parentNode) shellKindPopup.parentNode.removeChild(shellKindPopup);
+      shellKindPopup = null;
+      return;
+    }
+    if (!activePane || !activePane.shellKind) return;
+
+    shellKindPopup = document.createElement('div');
+    shellKindPopup.className = 'branch-popup';
+
+    const badge = document.getElementById('segShell');
+    const rect = badge.getBoundingClientRect();
+    shellKindPopup.style.bottom = (window.innerHeight - rect.top + 4) + 'px';
+    shellKindPopup.style.left = Math.max(10, rect.left) + 'px';
+
+    const head = document.createElement('div');
+    head.className = 'branch-popup-head';
+    head.innerHTML = '<span>Shell (for suggestions)</span><span style="cursor:pointer;font-size:10px" id="shellkind-close">✕</span>';
+    shellKindPopup.appendChild(head);
+
+    const list = document.createElement('div');
+    list.className = 'branch-popup-list';
+    Object.keys(SHELL_KIND_LABELS).forEach(kind => {
+      const item = document.createElement('div');
+      item.className = 'branch-item' + (activePane.shellKind === kind ? ' current' : '');
+      item.innerHTML = (activePane.shellKind === kind ? '★ ' : '') + SHELL_KIND_LABELS[kind];
+      item.onclick = () => {
+        activePane.shellKind = kind;
+        updateFooter();
+        if (shellKindPopup && shellKindPopup.parentNode) shellKindPopup.parentNode.removeChild(shellKindPopup);
+        shellKindPopup = null;
+      };
+      list.appendChild(item);
+    });
+    shellKindPopup.appendChild(list);
+    document.body.appendChild(shellKindPopup);
+
+    document.getElementById('shellkind-close').onclick = () => {
+      if (shellKindPopup && shellKindPopup.parentNode) shellKindPopup.parentNode.removeChild(shellKindPopup);
+      shellKindPopup = null;
+    };
+
+    setTimeout(() => {
+      const handleOutsideClick = (e) => {
+        if (shellKindPopup && !shellKindPopup.contains(e.target) && !badge.contains(e.target)) {
+          if (shellKindPopup && shellKindPopup.parentNode) shellKindPopup.parentNode.removeChild(shellKindPopup);
+          shellKindPopup = null;
           document.removeEventListener('click', handleOutsideClick);
         }
       };
@@ -2292,6 +2352,8 @@
       }
       if (e.key === 'Tab' || e.key === 'Enter') {
         completeSuggest(activePane, matchingSuggestions[activeSuggestIdx]);
+        e.preventDefault();
+        e.stopPropagation();
         return false;
       }
       if (e.key === 'Escape') {
@@ -2304,10 +2366,14 @@
       if (e.key === 'Tab') {
         if (e.shiftKey) {
           if (cycleGhostPrev(activePane)) {
+            e.preventDefault();
+            e.stopPropagation();
             return false;
           }
         } else {
           if (cycleGhostNext(activePane)) {
+            e.preventDefault();
+            e.stopPropagation();
             return false;
           }
         }
@@ -2371,7 +2437,7 @@
 
   class Pane{
     constructor(tab, cwd){
-      this.tab=tab; this.initialCwd=cwd||''; this.cwd=''; this.branch=''; this.dirty=false;
+      this.tab=tab; this.initialCwd=cwd||''; this.cwd=''; this.branch=''; this.dirty=false; this.shellKind='pwsh';
       this.el=document.createElement('div'); this.el.className='pane';
       this.host=document.createElement('div'); this.host.className='term';
       this.el.appendChild(this.host);
@@ -2412,7 +2478,7 @@
             } else {
               cmd = lineText.trim();
             }
-            if (cmd && cmd.length > 2 && !defaultSuggestions.includes(cmd) && !customSuggestions.includes(cmd)) {
+            if (cmd && cmd.length > 2 && !getDefaultSuggestions(self).includes(cmd) && !customSuggestions.includes(cmd)) {
               customSuggestions.unshift(cmd);
               if (customSuggestions.length > 50) customSuggestions.pop();
             }
@@ -2864,6 +2930,8 @@
     }
     segHtml('fBranch', gitHtml);
 
+    seg('fShell', activePane && activePane.shellKind ? SHELL_KIND_LABELS[activePane.shellKind] : '');
+
     const fErr = document.getElementById('fError');
     if (fErr) {
       const exitCode = activePane && activePane.lastExitCode;
@@ -2908,6 +2976,9 @@
   document.getElementById('segBranch').style.cursor = 'pointer';
   document.getElementById('segBranch').addEventListener('click', () => {
     toggleGitBranchManagerPopup();
+  });
+  document.getElementById('segShell').addEventListener('click', () => {
+    toggleShellKindPopup();
   });
   window.addEventListener('resize',()=>{ if(activeTab&&activeTab.type==='term') activeTab.panes.forEach(p=>p.doFit()); fitTabs(); });
   window.addEventListener('beforeunload', () => {
@@ -2998,13 +3069,27 @@
   let matchingSuggestions = [];
   let currentSuggestInput = '';
 
-  const defaultSuggestions = [
+  const SUGGESTIONS_COMMON = [
     "git status", "git diff", "git add .", "git commit -m \"", "git push", "git pull", "git checkout ", "git branch", "git log --oneline",
     "npm run dev", "npm install", "npm test", "npm run build",
-    "docker ps", "docker run -d ", "docker exec -it ", "docker compose up", "docker compose down",
-    "cd ", "ls", "pwd", "mkdir ", "rm -rf ",
-    "Get-Process", "Get-Service", "Get-Command", "Get-Help", "Clear-Host", "killport ", "pt help", "pt ports", "pt env", "pt review", "pt commit"
+    "docker ps", "docker run -d ", "docker exec -it ", "docker compose up", "docker compose down"
   ];
+  const SUGGESTIONS_BY_SHELL = {
+    pwsh: ["cd ", "ls", "pwd", "mkdir ", "rm -rf ", "Get-Process", "Get-Service", "Get-Command", "Get-Help",
+      "Clear-Host", "killport ", "pt help", "pt ports", "pt env", "pt review", "pt commit"],
+    cmd: ["dir", "cls", "copy ", "move ", "del ", "ren ", "type ", "cd ", "echo ", "set", "tasklist",
+      "taskkill /IM \" /F", "ipconfig", "ipconfig /all", "netstat -ano", "where ", "findstr \"", "attrib ",
+      "whoami", "hostname"],
+    linux: ["ls -la", "cd ", "pwd", "mkdir -p ", "rm -rf ", "cp -r ", "mv ", "cat ", "grep -r \"",
+      "find . -name \"", "chmod +x ", "sudo ", "ps aux", "top", "systemctl status ", "systemctl restart ",
+      "df -h", "du -sh ", "history", "clear", "which ", "man ", "tail -f ", "curl ", "wget ", "export ",
+      "uname -a", "whoami", "hostname"]
+  };
+  const SHELL_KIND_LABELS = { pwsh: 'PowerShell', cmd: 'CMD', linux: 'Linux' };
+  function getDefaultSuggestions(pane) {
+    const kind = (pane && pane.shellKind) || 'pwsh';
+    return SUGGESTIONS_COMMON.concat(SUGGESTIONS_BY_SHELL[kind] || SUGGESTIONS_BY_SHELL.pwsh);
+  }
   let customSuggestions = [];
 
   function showTerminalSuggestions(pane) {
@@ -3027,7 +3112,7 @@
       return;
     }
 
-    const all = Array.from(new Set(customSuggestions.concat(defaultSuggestions)));
+    const all = Array.from(new Set(customSuggestions.concat(getDefaultSuggestions(pane))));
     matchingSuggestions = all.filter(s => s.toLowerCase().startsWith(input.toLowerCase()) && s.toLowerCase() !== input.toLowerCase());
 
     if (matchingSuggestions.length === 0) {
