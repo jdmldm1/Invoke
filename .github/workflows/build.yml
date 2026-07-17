@@ -50,6 +50,9 @@ jobs:
       - name: Install WiX Toolset v4
         run: dotnet tool install --global wix --version 4.0.5
 
+      - name: Copy invoke.ps1
+        run: Copy-Item invoke.ps1 build\invoke.ps1
+
       # ── Build per-user MSI (no admin required) ────────────────────────────
       - name: Build MSI Installer
         run: |
