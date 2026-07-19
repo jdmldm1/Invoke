@@ -67,8 +67,6 @@ func main() {
 		},
 	})
 	if w == nil {
-		// No WebView2 runtime: fall back to launching the server and
-		// opening it in the system browser (no splash — nothing to host it in).
 		cmd := exec.Command(serverExe, "term")
 		cmd.Env = append(os.Environ(), fmt.Sprintf("INVOKE_TERM_PORT=%d", port), "INVOKE_NO_WINDOW=1")
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
@@ -96,7 +94,7 @@ func main() {
 		)
 		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 		if err := cmd.Start(); err != nil {
-			resultCh <- startResult{nil, fmt.Errorf("Could not start invoke-server.exe:\n\n%v", err)}
+			resultCh <- startResult{nil, fmt.Errorf("could not start invoke-server.exe:\n\n%v", err)}
 			return
 		}
 		if !waitForServer(url) {
@@ -114,11 +112,6 @@ func main() {
 			w.Dispatch(func() { w.SetHtml(errorPageHTML(res.err.Error())) })
 			return
 		}
-		// Point the splash's hidden iframe at the real app instead of
-		// navigating the top-level document — a top-level Navigate briefly
-		// shows WebView2's default white background before the new
-		// document's stylesheet applies. The iframe swap has no such flash;
-		// splash.html fades its overlay once the iframe finishes loading.
 		w.Dispatch(func() { w.Eval("document.getElementById('app-frame').src=" + strconv.Quote(url) + ";") })
 		<-done
 		res.cmd.Process.Kill()
@@ -129,7 +122,7 @@ func main() {
 }
 
 func waitForServer(url string) bool {
-	for i := 0; i < 100; i++ {
+	for range 100 {
 		resp, err := http.Get(url)
 		if err == nil {
 			resp.Body.Close()

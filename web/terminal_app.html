@@ -243,6 +243,7 @@
     <div class="seg" id="segShell" title="Shell type for autocomplete suggestions — click to change"><span id="fShell"></span></div>
     <div class="seg" id="segError"><span id="fError" title="Click to diagnose error with AI"></span></div>
     <div class="spacer"></div>
+    <div class="seg warn" id="segNetwork" title="Remote network access is ON — click to manage" style="cursor:pointer"><span id="fNetwork"></span></div>
     <div class="seg warn" id="segBroadcast"><span id="fBroadcast"></span></div>
     <div class="seg" id="segSel"><span id="fSel"></span></div>
     <div class="seg" id="segZoom"><span id="fZoom"></span></div>
@@ -273,6 +274,51 @@
 
   let opacityLevel = 90;
   let appAliases = {};
+  let networkAccessOn = false;
+
+  function refreshNetworkStatus() {
+    fetch('/network-access').then(function(r){ return r.json(); }).then(function(status){
+      networkAccessOn = !!status.enabled;
+      updateFooter();
+    }).catch(function(){});
+  }
+
+  function configureNetworkAccess() {
+    fetch('/network-access').then(function(r){ return r.json(); }).then(function(status){
+      if (status.enabled) {
+        const urls = (status.addresses||[]).map(function(a){ return 'http://'+a+':'+status.port; }).join('\n') || '(no LAN address found)';
+        if (!confirm('Remote network access is ON. Reachable from other devices on your network at:\n\n' + urls + '\n\nTurn it OFF?')) return;
+        fetch('/network-access', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({enabled:false})
+        }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+          .then(function(res){
+            if (!res.ok) { alert('Failed: ' + (res.d.error||'unknown error')); return; }
+            networkAccessOn = false;
+            updateFooter();
+            alert('Remote network access disabled.');
+          });
+        return;
+      }
+
+      if (!confirm('This will let OTHER DEVICES on your network open this terminal in a browser and run commands on this machine, protected only by a password. Only enable this on a network you trust. Continue?')) return;
+      const pw = prompt('Set a password for remote access:' + (status.hasPassword ? ' (leave blank to reuse the existing password)' : ''));
+      if (pw === null) return;
+      if (!status.hasPassword && !pw.trim()) { alert('A password is required to enable remote access.'); return; }
+
+      fetch('/network-access', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({enabled:true, password: pw.trim()})
+      }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+        .then(function(res){
+          if (!res.ok) { alert('Failed: ' + (res.d.error||'unknown error')); return; }
+          networkAccessOn = true;
+          updateFooter();
+          const urls = (res.d.addresses||[]).map(function(a){ return 'http://'+a+':'+res.d.port; }).join('\n') || '(no LAN address found — check your network connection)';
+          alert('Remote network access enabled.\n\nOpen from another device on your network:\n\n' + urls);
+        });
+    });
+  }
 
   function esc(s){ return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
 
@@ -2150,6 +2196,7 @@
         {label:'Quick Connect...', action:function(){openSSHQuickConnect();}},
       ]},
       {label:'SCP Transfer', action:function(){openSCPTab();}},
+      {label:'Remote Network Access...', action:function(){configureNetworkAccess();}, checked:function(){return networkAccessOn;}},
       {label:'Git Operations', submenu:[
         {label:'Status', action:function(){sendToActive('git status -sb');}},
         {label:'Pull', action:function(){sendToActive('git pull');}},
@@ -2948,6 +2995,7 @@
       else { const n=activeTab.panes.size; paneTxt=n+(n===1?' pane':' panes'); } }
     document.getElementById('fPanes').textContent=paneTxt;
     document.getElementById('fTabs').textContent=tabs.length+(tabs.length===1?' tab':' tabs');
+    seg('fNetwork', networkAccessOn?'🔓 LAN':'');
     seg('fBroadcast', broadcastOn?'BROADCAST':'');
     seg('fSel', selChars?(selChars+' selected'):'');
     seg('fZoom', zoomLevel?('font '+(BASE_FONT+zoomLevel)+'px'):'');
@@ -3411,6 +3459,9 @@
   const scaffoldEl = document.getElementById('sb-scaffold');
   if (scaffoldEl) scaffoldEl.onclick = () => openScaffoldModal();
 
+  const segNetworkEl = document.getElementById('segNetwork');
+  if (segNetworkEl) segNetworkEl.addEventListener('click', configureNetworkAccess);
+
   buildMenus();
   connectControl();
   initTransparency();
@@ -3418,6 +3469,7 @@
   refreshLayoutMenu();
   refreshSidebar();
   loadSessionsState();
+  refreshNetworkStatus();
   updateFooter();
 })();
 </script>

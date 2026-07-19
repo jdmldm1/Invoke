@@ -140,13 +140,13 @@ func handleSSHEndpoints(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.Error(w, "method not allowed", 405)
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func handleSSHConnect(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -160,7 +160,7 @@ func handleSSHConnect(w http.ResponseWriter, r *http.Request) {
 
 	cfg := loadConfig()
 	if req.Index < 0 || req.Index >= len(cfg.SSHEndpoints) {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"error": "endpoint not found"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"error": "endpoint not found"})
 		return
 	}
 
@@ -191,7 +191,7 @@ func handleSSHConnect(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"cmd":       cmd,
 		"password":  decryptSSHPassword(ep.EncPassword),
 		"auto_sudo": ep.AutoSudo,

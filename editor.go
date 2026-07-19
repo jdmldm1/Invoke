@@ -251,7 +251,7 @@ func handleConverterRoute(w http.ResponseWriter, r *http.Request) {
 
 func handleConverterRun(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -275,11 +275,11 @@ func handleConverterRun(w http.ResponseWriter, r *http.Request) {
 	out, err := aiGenerateOnce(prompt, 60*time.Second)
 	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
 		return
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": true, "code": out})
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true, "code": out})
 }
 
 func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
@@ -342,8 +342,7 @@ func handleSidebarInfo(w http.ResponseWriter, r *http.Request) {
 		content := string(b)
 
 		re := regexp.MustCompile(`^[a-zA-Z0-9_-]+:`)
-		lines := strings.Split(content, "\n")
-		for _, l := range lines {
+		for l := range strings.SplitSeq(content, "\n") {
 			if re.MatchString(l) {
 				target := strings.TrimSpace(strings.Split(l, ":")[0])
 				if target != ".PHONY" && target != "all" {
@@ -582,4 +581,3 @@ func monacoEditHTML(name, ext, absPath, content string) string {
 		"__ABS__":     string(a),
 	})
 }
-

@@ -116,8 +116,7 @@ func handleGitBranches(w http.ResponseWriter, r *http.Request) {
 	}
 
 	branches := []GitBranchInfo{}
-	lines := strings.Split(stdout.String(), "\n")
-	for _, l := range lines {
+	for l := range strings.SplitSeq(stdout.String(), "\n") {
 		l = strings.TrimSpace(l)
 		if l == "" {
 			continue
@@ -155,8 +154,7 @@ func handleGitCheckout(w http.ResponseWriter, r *http.Request) {
 	}
 
 	branch := req.Branch
-	if strings.HasPrefix(branch, "origin/") {
-		localName := strings.TrimPrefix(branch, "origin/")
+	if localName, ok := strings.CutPrefix(branch, "origin/"); ok {
 		cmd := exec.Command("git", "checkout", "-b", localName, "--track", branch)
 		cmd.Dir = req.Dir
 		if err := cmd.Run(); err != nil {
@@ -233,8 +231,7 @@ func getGitStatus(dir string) GitRepoStatus {
 	statusOut, _ := statusCmd.Output()
 
 	var files []GitFileStatus
-	lines := strings.Split(string(statusOut), "\n")
-	for _, line := range lines {
+	for line := range strings.SplitSeq(string(statusOut), "\n") {
 		if len(line) < 3 {
 			continue
 		}
@@ -263,139 +260,6 @@ func getGitStatus(dir string) GitRepoStatus {
 		Branch: branch,
 		Files:  files,
 	}
-}
-
-func gitStageFile(dir, file string) error {
-	cmd := exec.Command("git", "add", file)
-	cmd.Dir = dir
-	return cmd.Run()
-}
-
-func gitUnstageFile(dir, file string) error {
-	cmd := exec.Command("git", "restore", "--staged", file)
-	cmd.Dir = dir
-	return cmd.Run()
-}
-
-func gitGetDiff(dir, file string) string {
-	var cmd *exec.Cmd
-	status := getGitStatus(dir)
-	isStaged := false
-	for _, f := range status.Files {
-		if f.Path == file && f.Status == "staged" {
-			isStaged = true
-			break
-		}
-	}
-
-	if isStaged {
-		cmd = exec.Command("git", "diff", "--cached", file)
-	} else {
-		cmd = exec.Command("git", "diff", file)
-	}
-	cmd.Dir = dir
-	var outBytes bytes.Buffer
-	cmd.Stdout = &outBytes
-	_ = cmd.Run()
-	return outBytes.String()
-}
-
-func gitCommit(dir, msg string) (string, error) {
-	cmd := exec.Command("git", "commit", "-m", msg)
-	cmd.Dir = dir
-	var outBytes bytes.Buffer
-	cmd.Stdout = &outBytes
-	cmd.Stderr = &outBytes
-	err := cmd.Run()
-	return outBytes.String(), err
-}
-
-func gitGetBranches(dir string) ([]string, error) {
-	cmd := exec.Command("git", "branch")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return nil, err
-	}
-	var branches []string
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		if strings.HasPrefix(line, "* ") {
-			line = strings.TrimPrefix(line, "* ")
-		}
-		branches = append(branches, line)
-	}
-	return branches, nil
-}
-
-func gitCheckout(dir, branch string) (string, error) {
-	cmd := exec.Command("git", "checkout", branch)
-	cmd.Dir = dir
-	var outBytes bytes.Buffer
-	cmd.Stdout = &outBytes
-	cmd.Stderr = &outBytes
-	err := cmd.Run()
-	return outBytes.String(), err
-}
-
-func gitPull(dir string) (string, error) {
-	cmd := exec.Command("git", "pull")
-	cmd.Dir = dir
-	var outBytes bytes.Buffer
-	cmd.Stdout = &outBytes
-	cmd.Stderr = &outBytes
-	err := cmd.Run()
-	return outBytes.String(), err
-}
-
-func gitPush(dir string) (string, error) {
-	cmd := exec.Command("git", "push")
-	cmd.Dir = dir
-	var outBytes bytes.Buffer
-	cmd.Stdout = &outBytes
-	cmd.Stderr = &outBytes
-	err := cmd.Run()
-	return outBytes.String(), err
-}
-
-func gitStageAll(dir string) error {
-	cmd := exec.Command("git", "add", "-A")
-	cmd.Dir = dir
-	return cmd.Run()
-}
-
-func gitDiscardFile(dir string, f GitFileStatus) (string, error) {
-	if f.Status == "untracked" {
-		if err := os.Remove(filepath.Join(dir, f.Path)); err != nil {
-			return "", err
-		}
-		return "Deleted untracked file: " + f.Path, nil
-	}
-
-	unstage := exec.Command("git", "restore", "--staged", f.Path)
-	unstage.Dir = dir
-	_ = unstage.Run()
-
-	cmd := exec.Command("git", "restore", f.Path)
-	cmd.Dir = dir
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	cmd.Stderr = &out
-	if err := cmd.Run(); err != nil {
-		cmd2 := exec.Command("git", "checkout", "--", f.Path)
-		cmd2.Dir = dir
-		var out2 bytes.Buffer
-		cmd2.Stdout = &out2
-		cmd2.Stderr = &out2
-		if err2 := cmd2.Run(); err2 != nil {
-			return out.String() + out2.String(), err2
-		}
-	}
-	return "Discarded changes in: " + f.Path, nil
 }
 
 func gitFileAtHead(absPath string) string {
@@ -431,19 +295,6 @@ func gitGetWorkingDiff(dir string) string {
 	cmd := exec.Command("git", "diff", "HEAD")
 	cmd.Dir = dir
 	out, _ := cmd.Output()
-	return string(out)
-}
-
-func gitGetLog(dir string, n int) string {
-	cmd := exec.Command("git", "log", fmt.Sprintf("-%d", n), "--pretty=format:%h  %ad  %s", "--date=short")
-	cmd.Dir = dir
-	out, err := cmd.Output()
-	if err != nil {
-		return "Could not read git log: " + err.Error()
-	}
-	if strings.TrimSpace(string(out)) == "" {
-		return "No commits yet."
-	}
 	return string(out)
 }
 

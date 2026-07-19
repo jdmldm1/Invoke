@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -31,6 +32,10 @@ type ConfigData struct {
 	Aliases      map[string]string `json:"aliases"`
 	JarvisPath   string            `json:"jarvis_path"`
 	SSHEndpoints []SSHEndpoint     `json:"ssh_endpoints"`
+
+	NetworkAccess       bool   `json:"network_access"`
+	NetworkPasswordHash string `json:"network_password_hash"`
+	NetworkPasswordSalt string `json:"network_password_salt"`
 }
 
 type LayoutPane struct {
@@ -130,7 +135,7 @@ func loadConfig() ConfigData {
 	}
 	defer file.Close()
 
-	var raw map[string]interface{}
+	var raw map[string]any
 	_ = json.NewDecoder(file).Decode(&raw)
 
 	var data ConfigData
@@ -148,7 +153,7 @@ func loadConfig() ConfigData {
 			data.OllamaModel = defaultConfig.OllamaModel
 		}
 
-		if histRaw, ok := raw["history"].([]interface{}); ok {
+		if histRaw, ok := raw["history"].([]any); ok {
 			for _, h := range histRaw {
 				if hStr, ok := h.(string); ok {
 					data.History = append(data.History, hStr)
@@ -156,9 +161,9 @@ func loadConfig() ConfigData {
 			}
 		}
 
-		if snipRaw, ok := raw["snippets"].([]interface{}); ok {
+		if snipRaw, ok := raw["snippets"].([]any); ok {
 			for _, s := range snipRaw {
-				if sMap, ok := s.(map[string]interface{}); ok {
+				if sMap, ok := s.(map[string]any); ok {
 					name, _ := sMap["name"].(string)
 					cmd, _ := sMap["cmd"].(string)
 					if name != "" && cmd != "" {
@@ -171,9 +176,9 @@ func loadConfig() ConfigData {
 			data.Snippets = defaultConfig.Snippets
 		}
 
-		if promptRaw, ok := raw["prompts"].([]interface{}); ok {
+		if promptRaw, ok := raw["prompts"].([]any); ok {
 			for _, p := range promptRaw {
-				if pMap, ok := p.(map[string]interface{}); ok {
+				if pMap, ok := p.(map[string]any); ok {
 					name, _ := pMap["name"].(string)
 					template, _ := pMap["template"].(string)
 					if name != "" && template != "" {
@@ -187,7 +192,7 @@ func loadConfig() ConfigData {
 		}
 
 		data.Aliases = make(map[string]string)
-		if aliasRaw, ok := raw["aliases"].(map[string]interface{}); ok {
+		if aliasRaw, ok := raw["aliases"].(map[string]any); ok {
 			for k, v := range aliasRaw {
 				if vStr, ok := v.(string); ok {
 					data.Aliases[k] = vStr
@@ -202,9 +207,19 @@ func loadConfig() ConfigData {
 			data.JarvisPath = jarvis
 		}
 
-		if epRaw, ok := raw["ssh_endpoints"].([]interface{}); ok {
+		if na, ok := raw["network_access"].(bool); ok {
+			data.NetworkAccess = na
+		}
+		if h, ok := raw["network_password_hash"].(string); ok {
+			data.NetworkPasswordHash = h
+		}
+		if s, ok := raw["network_password_salt"].(string); ok {
+			data.NetworkPasswordSalt = s
+		}
+
+		if epRaw, ok := raw["ssh_endpoints"].([]any); ok {
 			for _, e := range epRaw {
-				if eMap, ok := e.(map[string]interface{}); ok {
+				if eMap, ok := e.(map[string]any); ok {
 					var ep SSHEndpoint
 					ep.Name, _ = eMap["name"].(string)
 					ep.Host, _ = eMap["host"].(string)
@@ -245,44 +260,6 @@ func saveConfig(data ConfigData) {
 	encoder := json.NewEncoder(file)
 	encoder.SetIndent("", "  ")
 	_ = encoder.Encode(data)
-}
-
-func addSnippet(name, cmd string) {
-	name = strings.TrimSpace(name)
-	cmd = strings.TrimSpace(cmd)
-	if name == "" || cmd == "" {
-		return
-	}
-	config := loadConfig()
-	config.Snippets = append(config.Snippets, Snippet{Name: name, Cmd: cmd})
-	saveConfig(config)
-}
-
-func deleteSnippet(index int) {
-	config := loadConfig()
-	if index < 0 || index >= len(config.Snippets) {
-		return
-	}
-	config.Snippets = append(config.Snippets[:index], config.Snippets[index+1:]...)
-	saveConfig(config)
-}
-
-func addHistory(cmd string) {
-	if cmd == "" {
-		return
-	}
-	config := loadConfig()
-	newHistory := []string{cmd}
-	for _, h := range config.History {
-		if h != cmd {
-			newHistory = append(newHistory, h)
-		}
-	}
-	if len(newHistory) > 200 {
-		newHistory = newHistory[:200]
-	}
-	config.History = newHistory
-	saveConfig(config)
 }
 
 func addPrompt(name, template string) {
@@ -376,7 +353,7 @@ func handleLayout(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 
 	default:
-		http.Error(w, "method not allowed", 405)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
 }
 
@@ -408,8 +385,7 @@ func handleHistory(w http.ResponseWriter, r *http.Request) {
 
 	unique := []string{}
 	seen := make(map[string]bool)
-	for i := len(historyList) - 1; i >= 0; i-- {
-		cmd := historyList[i]
+	for _, cmd := range slices.Backward(historyList) {
 		if !seen[cmd] {
 			seen[cmd] = true
 			unique = append(unique, cmd)

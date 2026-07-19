@@ -139,7 +139,7 @@ func generateCommandOnly(query string) {
 	sysPrompt := "You are a PowerShell command generator. Output ONLY the single executable PowerShell command and nothing else. No markdown, no code fences, no explanation."
 	fullPrompt := fmt.Sprintf("%s\n\nUser request: %s\n\nPowerShell Command:", sysPrompt, query)
 
-	reqBody, _ := json.Marshal(map[string]interface{}{
+	reqBody, _ := json.Marshal(map[string]any{
 		"model":  model,
 		"prompt": fullPrompt,
 		"stream": false,
@@ -184,7 +184,7 @@ func executeAIDo(query string) {
 	prompt := fmt.Sprintf("You are a command line generator. Output ONLY the exact PowerShell or cmd command(s) that should be executed to accomplish this user request: '%s'. Do not use markdown backticks, explanations, or templates. Output nothing else but the exact command.", query)
 
 	client := &http.Client{}
-	reqBody, _ := json.Marshal(map[string]interface{}{
+	reqBody, _ := json.Marshal(map[string]any{
 		"model":  model,
 		"prompt": prompt,
 		"stream": true,
@@ -261,7 +261,7 @@ func askAI(question string) {
 
 	prompt := fmt.Sprintf("You are a concise, knowledgeable assistant for a software developer working in a terminal. Answer the question clearly and directly. Use plain text suitable for a terminal (no heavy markdown). Keep it focused.\n\nQuestion: %s", question)
 
-	reqBody, _ := json.Marshal(map[string]interface{}{
+	reqBody, _ := json.Marshal(map[string]any{
 		"model":  model,
 		"prompt": prompt,
 		"stream": true,
@@ -322,7 +322,7 @@ func explainError(errorText string) {
 
 	prompt := fmt.Sprintf("A PowerShell command failed with the following error output:\n%s\n\nExplain the error briefly (2-3 sentences) and provide the corrected command if applicable. Do not use complex markdown templates, keep it clean for terminal.", errorText)
 	client := &http.Client{}
-	reqBody, _ := json.Marshal(map[string]interface{}{
+	reqBody, _ := json.Marshal(map[string]any{
 		"model":  model,
 		"prompt": prompt,
 		"stream": true,
@@ -374,7 +374,7 @@ func getHoverInfo(targetCmd string) {
 
 	prompt := fmt.Sprintf("Provide a brief, VS Code style hover tooltip for the PowerShell command/keyword: '%s'. Format: 1-2 sentences explaining what it does, followed by one short practical example. Do not use markdown wrappers.", targetCmd)
 	client := &http.Client{}
-	reqBody, _ := json.Marshal(map[string]interface{}{
+	reqBody, _ := json.Marshal(map[string]any{
 		"model":  model,
 		"prompt": prompt,
 		"stream": false,

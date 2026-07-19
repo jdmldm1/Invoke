@@ -59,7 +59,7 @@ func aiGenerateOnce(prompt string, overall time.Duration) (string, error) {
 	host := cleanHost(config.OllamaHost)
 	model := config.OllamaModel
 
-	reqBody, _ := json.Marshal(map[string]interface{}{
+	reqBody, _ := json.Marshal(map[string]any{
 		"model":      model,
 		"prompt":     prompt,
 		"stream":     false,
@@ -151,7 +151,7 @@ func reviewDiffCLI() {
 		"edge cases, security issues, and clear style/maintainability problems. Reference the relevant code. "+
 		"If the change looks solid, say so briefly. Avoid heavy markdown.\n\nDiff:\n%s", diff)
 
-	reqBody, _ := json.Marshal(map[string]interface{}{
+	reqBody, _ := json.Marshal(map[string]any{
 		"model":      model,
 		"prompt":     prompt,
 		"stream":     true,
@@ -210,7 +210,7 @@ func reviewDiffCLI() {
 func handleAIComplete(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"POST required"}`, 405)
+		http.Error(w, `{"error":"POST required"}`, http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -237,7 +237,7 @@ func handleAIComplete(w http.ResponseWriter, r *http.Request) {
 
 	userPrompt := "Current directory: " + req.CWD + "\nPartial command: " + req.Line
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"model": cfg.OllamaModel,
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
@@ -282,7 +282,7 @@ func handleAIComplete(w http.ResponseWriter, r *http.Request) {
 func handleAITranslate(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"POST required"}`, 405)
+		http.Error(w, `{"error":"POST required"}`, http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -306,7 +306,7 @@ func handleAITranslate(w http.ResponseWriter, r *http.Request) {
 		"for " + osHint + " in the directory: " + req.CWD + ".\n" +
 		"Output ONLY the raw command, without markdown code fences, without quotes, and without any explanation."
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"model": cfg.OllamaModel,
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
@@ -342,7 +342,7 @@ func handleAITranslate(w http.ResponseWriter, r *http.Request) {
 func handleAIEditCode(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"POST required"}`, 405)
+		http.Error(w, `{"error":"POST required"}`, http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -363,7 +363,7 @@ func handleAIEditCode(w http.ResponseWriter, r *http.Request) {
 
 	userPrompt := "Code:\n" + req.Code + "\n\nInstruction:\n" + req.Instruction
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"model": cfg.OllamaModel,
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
@@ -401,7 +401,7 @@ func handleAIEditCode(w http.ResponseWriter, r *http.Request) {
 func handleAIScaffoldScript(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"POST required"}`, 405)
+		http.Error(w, `{"error":"POST required"}`, http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -417,7 +417,7 @@ func handleAIScaffoldScript(w http.ResponseWriter, r *http.Request) {
 	systemPrompt := "You are a PowerShell scripting assistant. Write a functional PowerShell script (.ps1) to accomplish the user's task.\n" +
 		"Output ONLY the raw PowerShell script code, with no markdown code fences, no quotes, and no formatting explanations. Start directly with the code."
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"model": cfg.OllamaModel,
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
@@ -455,7 +455,7 @@ func handleAIScaffoldScript(w http.ResponseWriter, r *http.Request) {
 func handleAIExplainHover(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"POST required"}`, 405)
+		http.Error(w, `{"error":"POST required"}`, http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -476,7 +476,7 @@ func handleAIExplainHover(w http.ResponseWriter, r *http.Request) {
 
 	userPrompt := fmt.Sprintf("Language: %s\nSymbol: %s\nLine context: %s\nCode context:\n%s", req.Lang, req.Symbol, req.Line, req.Context)
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"model": cfg.OllamaModel,
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
@@ -509,7 +509,7 @@ func handleAIExplainHover(w http.ResponseWriter, r *http.Request) {
 func handleAIEditorComplete(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	if r.Method != http.MethodPost {
-		http.Error(w, `{"error":"POST required"}`, 405)
+		http.Error(w, `{"error":"POST required"}`, http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -526,7 +526,7 @@ func handleAIEditorComplete(w http.ResponseWriter, r *http.Request) {
 	systemPrompt := "You are a code completion model. Write the exact immediate next characters/lines of code that should continue from the user's cursor position.\n" +
 		"Output ONLY the completion suffix, without markdown backticks, without formatting, and without any explanation."
 
-	payload := map[string]interface{}{
+	payload := map[string]any{
 		"model": cfg.OllamaModel,
 		"messages": []map[string]string{
 			{"role": "system", "content": systemPrompt},
@@ -572,7 +572,7 @@ func buildChatContext(paths []string) string {
 			continue
 		}
 		if info.IsDir() {
-			b.WriteString("\n# Directory listing: " + p + "\n")
+			fmt.Fprintf(&b, "\n# Directory listing: %s\n", p)
 			entries, _ := os.ReadDir(p)
 			for i, e := range entries {
 				if i > 200 {
@@ -583,7 +583,7 @@ func buildChatContext(paths []string) string {
 				if e.IsDir() {
 					name += "/"
 				}
-				b.WriteString("  " + name + "\n")
+				fmt.Fprintf(&b, "  %s\n", name)
 			}
 		} else {
 			data, err := os.ReadFile(p)
@@ -594,7 +594,7 @@ func buildChatContext(paths []string) string {
 			if len(content) > 12000 {
 				content = content[:12000] + "\n...(truncated)..."
 			}
-			b.WriteString("\n# File: " + p + "\n```\n" + content + "\n```\n")
+			fmt.Fprintf(&b, "\n# File: %s\n```\n%s\n```\n", p, content)
 			total += len(content)
 		}
 		if total > 40000 {
@@ -684,72 +684,65 @@ func handleChatWS(w http.ResponseWriter, r *http.Request) {
 
 	var currentCancel context.CancelFunc
 
-	for {
-		select {
-		case msg, ok := <-msgChan:
-			if !ok {
-				if currentCancel != nil {
-					currentCancel()
-				}
-				return
+	for msg := range msgChan {
+		switch msg.Type {
+		case "tool_response":
+			select {
+			case responseChan <- msg.Status:
+			default:
 			}
 
-			switch msg.Type {
-			case "tool_response":
+		case "run_command":
+			if currentCancel != nil {
+				currentCancel()
+			}
+			var ctx context.Context
+			ctx, currentCancel = context.WithCancel(context.Background())
+
+			go func(c context.Context, cmd string) {
+				reqPayload, _ := json.Marshal(map[string]string{
+					"tool": "execute_command",
+					"args": cmd,
+				})
+				sendChat(conn, "tool_request", string(reqPayload))
+
 				select {
-				case responseChan <- msg.Status:
-				default:
-				}
-
-			case "run_command":
-				if currentCancel != nil {
-					currentCancel()
-				}
-				var ctx context.Context
-				ctx, currentCancel = context.WithCancel(context.Background())
-
-				go func(c context.Context, cmd string) {
-					reqPayload, _ := json.Marshal(map[string]string{
-						"tool": "execute_command",
-						"args": cmd,
-					})
-					sendChat(conn, "tool_request", string(reqPayload))
-
-					select {
-					case status := <-responseChan:
-						if status == "approved" {
-							sendChat(conn, "tool_status", "Executing command: "+cmd)
-							output, err := runCommandTool(cmd)
-							var result string
-							if err != nil {
-								result = fmt.Sprintf("Error running command: %v\nOutput: %s", err, output)
-							} else {
-								result = output
-							}
-							sendChat(conn, "tool_result", result)
-							sendChat(conn, "done", "")
+				case status := <-responseChan:
+					if status == "approved" {
+						sendChat(conn, "tool_status", "Executing command: "+cmd)
+						output, err := runCommandTool(cmd)
+						var result string
+						if err != nil {
+							result = fmt.Sprintf("Error running command: %v\nOutput: %s", err, output)
 						} else {
-							sendChat(conn, "tool_status", "Command rejected.")
-							sendChat(conn, "done", "")
+							result = output
 						}
-					case <-c.Done():
-						return
+						sendChat(conn, "tool_result", result)
+						sendChat(conn, "done", "")
+					} else {
+						sendChat(conn, "tool_status", "Command rejected.")
+						sendChat(conn, "done", "")
 					}
-				}(ctx, msg.Command)
-
-			case "question":
-				if currentCancel != nil {
-					currentCancel()
+				case <-c.Done():
+					return
 				}
+			}(ctx, msg.Command)
 
-				var ctx context.Context
-				ctx, currentCancel = context.WithCancel(context.Background())
-
-				go func(c context.Context, q string, p []string, h []map[string]string, uj bool) {
-					streamChatAgent(c, conn, q, p, h, responseChan, uj)
-				}(ctx, msg.Question, msg.Paths, msg.History, msg.UseJarvis)
+		case "question":
+			if currentCancel != nil {
+				currentCancel()
 			}
+
+			var ctx context.Context
+			ctx, currentCancel = context.WithCancel(context.Background())
+
+			go func(c context.Context, q string, p []string, h []map[string]string, uj bool) {
+				streamChatAgent(c, conn, q, p, h, responseChan, uj)
+			}(ctx, msg.Question, msg.Paths, msg.History, msg.UseJarvis)
 		}
+	}
+	if currentCancel != nil {
+		currentCancel()
 	}
 }
 
@@ -833,14 +826,16 @@ func streamChatAgent(ctx context.Context, conn *websocket.Conn, question string,
 		sendChat(conn, "step_start", "")
 
 		var promptBuilder strings.Builder
-		promptBuilder.WriteString(sysPrompt + "\n\n")
+		promptBuilder.WriteString(sysPrompt)
+		promptBuilder.WriteString("\n\n")
 		for _, h := range activeHistory {
 			role := h["role"]
 			content := h["content"]
-			if role == "user" {
-				promptBuilder.WriteString("User: " + content + "\n\n")
-			} else if role == "assistant" {
-				promptBuilder.WriteString("Assistant: " + content + "\n\n")
+			switch role {
+			case "user":
+				fmt.Fprintf(&promptBuilder, "User: %s\n\n", content)
+			case "assistant":
+				fmt.Fprintf(&promptBuilder, "Assistant: %s\n\n", content)
 			}
 		}
 		promptBuilder.WriteString("Assistant:")
@@ -848,7 +843,7 @@ func streamChatAgent(ctx context.Context, conn *websocket.Conn, question string,
 
 		fmt.Printf("[AI Chat Agent] Connecting to Ollama (model: %s)...\n", model)
 
-		reqBody, _ := json.Marshal(map[string]interface{}{"model": model, "prompt": fullPrompt, "stream": true, "keep_alive": -1})
+		reqBody, _ := json.Marshal(map[string]any{"model": model, "prompt": fullPrompt, "stream": true, "keep_alive": -1})
 		req, err := http.NewRequestWithContext(ctx, "POST", host+"/api/generate", bytes.NewBuffer(reqBody))
 		if err != nil {
 			sendChat(conn, "error", "Failed to create request: "+err.Error())
@@ -893,6 +888,11 @@ func streamChatAgent(ctx context.Context, conn *websocket.Conn, question string,
 					break
 				}
 			}
+		}
+		if err := scanner.Err(); err != nil {
+			sendChat(conn, "error", "Stream read error: "+err.Error())
+			resp.Body.Close()
+			return
 		}
 		resp.Body.Close()
 
@@ -1099,7 +1099,7 @@ func handleChatState(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(200)
 		return
 	}
-	http.Error(w, "method not allowed", 405)
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func handleAutoconfigureAI(w http.ResponseWriter, r *http.Request) {
@@ -1117,7 +1117,7 @@ func handleAutoconfigureAI(w http.ResponseWriter, r *http.Request) {
 	time.Sleep(2 * time.Second)
 
 	go func() {
-		pullBody, _ := json.Marshal(map[string]interface{}{"name": "phi4-mini"})
+		pullBody, _ := json.Marshal(map[string]any{"name": "phi4-mini"})
 		client := &http.Client{Timeout: 10 * time.Minute}
 		resp, err := client.Post("http://localhost:11434/api/pull", "application/json", bytes.NewBuffer(pullBody))
 		if err == nil {
@@ -1134,7 +1134,7 @@ func handleAutoconfigureAI(w http.ResponseWriter, r *http.Request) {
 		_ = os.WriteFile(configPath, data, 0644)
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success": true,
 		"message": "AI Autoconfigure initiated! Started Ollama Docker container, triggered phi4-mini model pull in background, and saved local config.",
 	})

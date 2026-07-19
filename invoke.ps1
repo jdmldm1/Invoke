@@ -1,15 +1,8 @@
-# ============================================================================
-#  Invoke - an AI-assisted developer shell for PowerShell
-#  Loaded automatically by invoke.exe; can also be dot-sourced from $PROFILE.
-# ============================================================================
-
-# UTF-8 everywhere so glyphs and emoji render correctly.
 try {
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
     $OutputEncoding = [System.Text.Encoding]::UTF8
 } catch {}
 
-# --- Resolve binary + script paths ------------------------------------------
 if ($env:INVOKE_EXE -and (Test-Path $env:INVOKE_EXE)) {
     $script:_ptBin = $env:INVOKE_EXE
 } elseif ($PSScriptRoot) {
@@ -20,18 +13,12 @@ if ($env:INVOKE_EXE -and (Test-Path $env:INVOKE_EXE)) {
 $script:_ptScript = $PSCommandPath
 $script:_ptMarks  = Join-Path $env:USERPROFILE ".powerterm_marks.json"
 
-# Cache elevation state (doesn't change during a session).
 try {
     $script:_ptAdmin = ([Security.Principal.WindowsPrincipal]`
         [Security.Principal.WindowsIdentity]::GetCurrent()`
         ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 } catch { $script:_ptAdmin = $false }
 
-# ============================================================================
-#  Window appearance: acrylic blur + opacity (modern translucent look)
-#  Affects the classic console window (conhost). Inside Windows Terminal the
-#  host controls transparency, so we skip and leave WT's own setting in charge.
-# ============================================================================
 if (-not ('Invoke.PtWindow' -as [type])) {
     try {
         Add-Type -ErrorAction Stop -TypeDefinition @'
@@ -72,13 +59,13 @@ namespace Invoke {
             int ex = GetWindowLong(h, GWL_EXSTYLE);
             SetWindowLong(h, GWL_EXSTYLE, ex | WS_EX_LAYERED);
             AccentPolicy ac = new AccentPolicy();
-            ac.AccentState = 4; // ACCENT_ENABLE_ACRYLICBLURBEHIND
+            ac.AccentState = 4;
             ac.GradientColor = ((uint)alpha << 24) | (tintBGR & 0x00FFFFFF);
             int size = Marshal.SizeOf(ac);
             IntPtr ptr = Marshal.AllocHGlobal(size);
             Marshal.StructureToPtr(ac, ptr, false);
             WinCompAttrData data = new WinCompAttrData();
-            data.Attribute = 19; // WCA_ACCENT_POLICY
+            data.Attribute = 19;
             data.Data = ptr;
             data.SizeOfData = size;
             SetWindowCompositionAttribute(h, ref data);
@@ -89,7 +76,7 @@ namespace Invoke {
             IntPtr h = GetConsoleWindow();
             if (h == IntPtr.Zero) return;
             AccentPolicy ac = new AccentPolicy();
-            ac.AccentState = 0; // disabled
+            ac.AccentState = 0;
             int size = Marshal.SizeOf(ac);
             IntPtr ptr = Marshal.AllocHGlobal(size);
             Marshal.StructureToPtr(ac, ptr, false);
@@ -124,13 +111,10 @@ function Set-Solid {
     try { [Invoke.PtWindow]::SetSolid(); Write-Host "Window set to solid (opaque)." -ForegroundColor DarkGray } catch {}
 }
 
-# Apply a modern frosted look at startup (skip inside Windows Terminal).
 if (-not $env:WT_SESSION) {
     try { [Invoke.PtWindow]::SetAcrylic([byte]125, 0x0B0F14) } catch {}
 }
 
-# Open a Monaco diff/edit view: as a tab inside the Invoke window when running
-# inside one (INVOKE_HOST is set), otherwise as a standalone browser window.
 function Open-PtView {
     param([string]$Kind, [string]$File)
     $abs = $File
@@ -150,9 +134,6 @@ function Open-PtView {
     & $script:_ptBin $Kind $File
 }
 
-# ============================================================================
-#  pt - main entry point
-# ============================================================================
 function pt {
     param (
         [Parameter(ValueFromRemainingArguments=$true)]
@@ -166,9 +147,6 @@ function pt {
         "help" { Show-PtHelp; return }
 
         "term" {
-            # Launch the terminal window DETACHED in its own (hidden) console so
-            # the ConPTY host never shares/corrupts this shell's console, and so
-            # the prompt returns immediately instead of blocking.
             Start-Process -FilePath $binaryPath -ArgumentList 'term' -WindowStyle Hidden
             Write-Host "Opening Invoke window..." -ForegroundColor DarkGray
             return
@@ -269,7 +247,6 @@ function pt {
         }
 
         "git" {
-            # Open the browser delta viewer for the current repo.
             & $binaryPath git
             return
         }
@@ -305,16 +282,12 @@ function pt {
         }
 
         default {
-            # No/unknown subcommand -> show the command reference.
             Show-PtHelp
             return
         }
     }
 }
 
-# ============================================================================
-#  Git shortcuts (chosen to avoid clobbering core PS aliases like gc/gl/gp)
-# ============================================================================
 function g       { git @args }
 function gs      { git status -sb @args }
 function ga      { git add @args }
@@ -334,9 +307,6 @@ function gbranch { git branch @args }
 function glog    { git log --oneline --graph --decorate -20 @args }
 function glg     { git log --graph --pretty=format:'%C(yellow)%h%Creset %C(cyan)%an%Creset %s %C(green)(%cr)%Creset' -25 @args }
 
-# ============================================================================
-#  Navigation & Unix-style helpers
-# ============================================================================
 function ..   { Set-Location .. }
 function ...  { Set-Location ../.. }
 function .... { Set-Location ../../.. }
@@ -351,7 +321,6 @@ function touch {
 }
 function reload { . $script:_ptScript; Write-Host "Invoke reloaded." -ForegroundColor Green }
 
-# Kill whatever process is listening on a TCP port.
 function killport {
     param([Parameter(Mandatory)][int]$Port)
     $conns = Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue
@@ -365,7 +334,6 @@ function killport {
     }
 }
 
-# Serve the current directory over HTTP (uses Python if available).
 function serve {
     param([int]$Port = 8000)
     if (Get-Command python -ErrorAction SilentlyContinue) {
@@ -379,7 +347,6 @@ function serve {
     }
 }
 
-# Pretty-print JSON from a pipeline/argument, or from the clipboard if none given.
 function json {
     param([Parameter(ValueFromPipeline=$true, ValueFromRemainingArguments=$true)][string[]]$InputJson)
     process {
@@ -390,9 +357,6 @@ function json {
     }
 }
 
-# ============================================================================
-#  Directory bookmarks:  mark [name] | j <name> | marks
-# ============================================================================
 function mark {
     param([string]$Name)
     if (-not $Name) { $Name = Split-Path $PWD -Leaf }
@@ -431,11 +395,6 @@ Register-ArgumentCompleter -CommandName j -ParameterName Name -ScriptBlock {
     }
 }
 
-# ============================================================================
-#  Frecency directory jumping (zoxide-style):  z <partial> | z (list)
-#  Every prompt records the current directory; 'z foo' jumps to the
-#  most "frecent" (frequent + recent) directory whose path matches 'foo'.
-# ============================================================================
 $script:_ptZFile      = Join-Path $env:USERPROFILE ".powerterm_z.json"
 $global:_ptZ          = @{}
 $script:_ptZLastWrite = 0
@@ -503,9 +462,6 @@ Register-ArgumentCompleter -CommandName z -ScriptBlock {
     }
 }
 
-# ============================================================================
-#  PSReadLine: predictions, syntax colors, ergonomic keys (all guarded)
-# ============================================================================
 if (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue) {
     try { Set-PSReadLineOption -EditMode Windows } catch {}
     try { Set-PSReadLineOption -HistorySearchCursorMovesToEnd } catch {}
@@ -516,16 +472,16 @@ if (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue) {
     try { Set-PSReadLineOption -PredictionViewStyle ListView } catch {}
     try {
         Set-PSReadLineOption -Colors @{
-            Command   = '#81a1c1'  # frost blue
-            Parameter = '#9aa3b5'  # muted slate
-            Operator  = '#d8dee9'  # soft white
-            Variable  = '#8fbcbb'  # muted teal
-            String    = '#a3be8c'  # sage
-            Number    = '#b48ead'  # mauve
-            Comment   = '#616e88'  # dim slate
-            Keyword   = '#5e81ac'  # deep frost
-            Error     = '#bf616a'  # muted red
-            Selection = '#3b4252'  # polar night
+            Command   = '#81a1c1'
+            Parameter = '#9aa3b5'
+            Operator  = '#d8dee9'
+            Variable  = '#8fbcbb'
+            String    = '#a3be8c'
+            Number    = '#b48ead'
+            Comment   = '#616e88'
+            Keyword   = '#5e81ac'
+            Error     = '#bf616a'
+            Selection = '#3b4252'
             InlinePrediction = '#4c566a'
         }
     } catch {}
@@ -536,7 +492,6 @@ if (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue) {
     try { Set-PSReadLineKeyHandler -Key Ctrl+RightArrow -Function ForwardWord } catch {}
 }
 
-# --- Ctrl+G : turn the current line (natural language) into a command --------
 if (Get-Command Set-PSReadLineKeyHandler -ErrorAction SilentlyContinue) {
     Set-PSReadLineKeyHandler -Key "Ctrl+g" -ScriptBlock {
         $line = $null; $cursor = $null
@@ -551,7 +506,6 @@ if (Get-Command Set-PSReadLineKeyHandler -ErrorAction SilentlyContinue) {
     }
 }
 
-# --- Ctrl+H : AI hover info for the word under the cursor --------------------
 if (Get-Command Set-PSReadLineKeyHandler -ErrorAction SilentlyContinue) {
     Set-PSReadLineKeyHandler -Key "Ctrl+h" -ScriptBlock {
         $ast=$null;$tokens=$null;$errors=$null;$cursor=$null
@@ -575,9 +529,6 @@ if (Get-Command Set-PSReadLineKeyHandler -ErrorAction SilentlyContinue) {
     }
 }
 
-# ============================================================================
-#  Help / cheat-sheet
-# ============================================================================
 function Show-PtHelp {
     $c = 'Cyan'; $d = 'DarkGray'
     Write-Host ""
@@ -622,53 +573,32 @@ function Show-PtHelp {
     Write-Host ""
 }
 
-# Short aliases for the main command (the tool is "Invoke"; 'pt' stays for muscle memory).
 Set-Alias -Name iv -Value pt -Scope Global -Force
 Set-Alias -Name invoke -Value pt -Scope Global -Force
 
-# ============================================================================
-#  Banner
-# ============================================================================
-
-# ============================================================================
-#  Prompt
-#  Returned as a SINGLE multi-line string (never via Write-Host) so PSReadLine
-#  can measure it correctly. Using Write-Host for part of the prompt, or padding
-#  to the full window width, desyncs PSReadLine's cursor math and scrambles input.
-#
-#    <blank>
-#    | <path>  | <branch*>  . <venv> <duration> <time> <exit>
-#    >
-# ============================================================================
 function prompt {
     $ok       = $?
     $lastExit = $global:LASTEXITCODE
     $esc      = [char]27
 
-    # Muted, non-neon palette (Nord-inspired truecolor). Built as strings so PS
-    # never sees ${var}[ (which it misparses as array indexing).
     $r="$esc[0m"
-    $dim="$esc[38;2;97;110;136m"     # #616e88 slate
-    $blue="$esc[38;2;129;161;193m"   # #81a1c1 frost blue
-    $cyan="$esc[38;2;216;222;233m"   # #d8dee9 soft white (path)
-    $green="$esc[38;2;163;190;140m"  # #a3be8c sage
-    $red="$esc[38;2;191;97;106m"     # #bf616a muted red
-    $yellow="$esc[38;2;235;203;139m" # #ebcb8b sand
-    $mag="$esc[38;2;180;142;173m"    # #b48ead mauve
-    $sky="$esc[38;2;129;161;193m"    # #81a1c1 accent gutter
+    $dim="$esc[38;2;97;110;136m"
+    $blue="$esc[38;2;129;161;193m"
+    $cyan="$esc[38;2;216;222;233m"
+    $green="$esc[38;2;163;190;140m"
+    $red="$esc[38;2;191;97;106m"
+    $yellow="$esc[38;2;235;203;139m"
+    $mag="$esc[38;2;180;142;173m"
+    $sky="$esc[38;2;129;161;193m"
 
-    # Glyphs by code point (encoding-independent; no Nerd Font required).
     $bar=[char]0x258C; $sep=[char]0x2502; $arr=[char]0x276F; $x=[char]0x2718; $dot=[char]0x00B7
 
-    # Record this directory for frecency jumping (debounced, never fatal).
     try { _ptTrackDir $PWD.Path } catch {}
 
-    # Path (~-collapsed) + accent gutter
     $p = $PWD.Path
     if ($HOME -and $p.StartsWith($HOME)) { $p = "~" + $p.Substring($HOME.Length) }
     $line = "$sky$bar$r $cyan$p$r"
 
-    # Git branch + dirty flag + status stats (+/-)
     $branchName = ''; $isDirty = $false
     $staged = 0; $unstaged = 0; $untracked = 0
     if (Get-Command git -ErrorAction SilentlyContinue) {
@@ -696,7 +626,6 @@ function prompt {
         }
     }
 
-    # Inline status: venv / admin / duration / time / exit (left-aligned, no padding)
     $segs = @()
     if ($env:VIRTUAL_ENV) { $segs += "$mag($(Split-Path $env:VIRTUAL_ENV -Leaf))$r" }
     if ($script:_ptAdmin) { $segs += "${red}ADMIN$r" }
@@ -719,12 +648,7 @@ function prompt {
 
     $symColor = if ($ok) { $green } else { $red }
 
-    # Shell-integration OSC 7000 (cwd|branch|dirty|staged|unstaged|untracked) for the Invoke window's
-    # status bar. Zero-width and ignored by terminals that don't recognize it.
-    # Placed at the very start so PSReadLine still measures the last line (the
-    # arrow) correctly.
     $dirtyFlag = if ($isDirty) { '1' } else { '0' }
-    # Use $ok (catches PS exceptions) + $lastExit (native process exit codes)
     $exitCode = if (-not $ok) {
         if ($null -ne $lastExit -and $lastExit -ne 0) { [int]$lastExit } else { 1 }
     } elseif ($null -ne $lastExit -and $lastExit -ne 0) { [int]$lastExit } else { 0 }

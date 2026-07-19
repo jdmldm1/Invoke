@@ -134,7 +134,7 @@ func styleInvokeWindow() {
 		}
 	}
 
-	for i := 0; i < 50; i++ {
+	for range 50 {
 		time.Sleep(200 * time.Millisecond)
 		found = 0
 		enumProc.Call(cb, 0)
@@ -187,11 +187,12 @@ func adjustOpacity(direction string) (int, error) {
 		return currentOpacityPct, fmt.Errorf("window not found")
 	}
 
-	if direction == "up" {
+	switch direction {
+	case "up":
 		currentOpacityPct += 5
-	} else if direction == "down" {
+	case "down":
 		currentOpacityPct -= 5
-	} else if direction == "opaque" || direction == "solid" {
+	case "opaque", "solid":
 		currentOpacityPct = 100
 	}
 
@@ -346,32 +347,32 @@ func handleFreePort(w http.ResponseWriter, r *http.Request) {
 	portStr := r.URL.Query().Get("port")
 	w.Header().Set("Content-Type", "application/json")
 	if portStr == "" {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "port parameter required"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": "port parameter required"})
 		return
 	}
 	port, err := strconv.Atoi(portStr)
 	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": "invalid port number"})
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": "invalid port number"})
 		return
 	}
 
 	pid, err := findPIDHoldingPort(port)
 	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": err.Error()})
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
 		return
 	}
 	if pid == 0 {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": fmt.Sprintf("No active process found on port %d.", port)})
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": fmt.Sprintf("No active process found on port %d.", port)})
 		return
 	}
 
 	err = killProcess(pid)
 	if err != nil {
-		_ = json.NewEncoder(w).Encode(map[string]interface{}{"success": false, "error": fmt.Sprintf("Failed to release port: %v", err)})
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": fmt.Sprintf("Failed to release port: %v", err)})
 		return
 	}
 
-	_ = json.NewEncoder(w).Encode(map[string]interface{}{
+	_ = json.NewEncoder(w).Encode(map[string]any{
 		"success": true,
 		"pid":     pid,
 		"message": fmt.Sprintf("Successfully released port %d (terminated process %d).", port, pid),
@@ -387,8 +388,7 @@ func findPIDHoldingPort(port int) (int, error) {
 	}
 
 	targetLocalAddr1 := fmt.Sprintf(":%d", port)
-	lines := strings.Split(string(out), "\n")
-	for _, line := range lines {
+	for line := range strings.SplitSeq(string(out), "\n") {
 		fields := strings.Fields(line)
 		if len(fields) < 5 {
 			continue
