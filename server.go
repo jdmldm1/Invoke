@@ -33,6 +33,23 @@ var wsUpgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
+type ActiveSession struct {
+	ID         string
+	Cwd        string
+	Clients    map[*websocket.Conn]bool
+	ClientMu   sync.Mutex
+	History    []byte
+	HistoryMu  sync.Mutex
+	Cols, Rows int
+	SizeMu     sync.Mutex
+	Cpty       *conpty.ConPty
+}
+
+var (
+	activeSessions   = make(map[string]*ActiveSession)
+	activeSessionsMu sync.Mutex
+)
+
 var (
 	connMu        sync.Mutex
 	activeConns   int
@@ -199,6 +216,22 @@ func networkAuthMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
+		if r.URL.Path == "/web/xterm.min.js" || r.URL.Path == "/web/xterm.min.css" || r.URL.Path == "/web/xterm-addon-fit.min.js" {
+			next.ServeHTTP(w, r)
+			return
+		}
+		if r.URL.Path == "/cast" || r.URL.Path == "/ws/view" {
+			sessionID := r.URL.Query().Get("session")
+			if sessionID != "" {
+				activeSessionsMu.Lock()
+				_, exists := activeSessions[sessionID]
+				activeSessionsMu.Unlock()
+				if exists {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+		}
 		if r.URL.Path == "/remote-login" {
 			handleRemoteLogin(w, r)
 			return
@@ -334,6 +367,7 @@ func handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	cols := atoiDefault(r.URL.Query().Get("cols"), 80)
 	rows := atoiDefault(r.URL.Query().Get("rows"), 24)
 	cwd := r.URL.Query().Get("cwd")
+	sessionID := r.URL.Query().Get("session")
 
 	env := append(os.Environ(), fmt.Sprintf("INVOKE_HOST=http://127.0.0.1:%d", serverPort))
 	opts := []conpty.ConPtyOption{conpty.ConPtyDimensions(cols, rows), conpty.ConPtyEnv(env)}
@@ -350,6 +384,26 @@ func handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer cpty.Close()
 
+	var session *ActiveSession
+	if sessionID != "" {
+		session = &ActiveSession{
+			ID:      sessionID,
+			Cwd:     cwd,
+			Clients: make(map[*websocket.Conn]bool),
+			Cols:    cols,
+			Rows:    rows,
+			Cpty:    cpty,
+		}
+		activeSessionsMu.Lock()
+		activeSessions[sessionID] = session
+		activeSessionsMu.Unlock()
+		defer func() {
+			activeSessionsMu.Lock()
+			delete(activeSessions, sessionID)
+			activeSessionsMu.Unlock()
+		}()
+	}
+
 	connMu.Lock()
 	activeConns++
 	everConnected = true
@@ -365,8 +419,23 @@ func handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		for {
 			n, readErr := cpty.Read(buf)
 			if n > 0 {
-				if conn.WriteMessage(websocket.BinaryMessage, buf[:n]) != nil {
+				data := buf[:n]
+				if conn.WriteMessage(websocket.BinaryMessage, data) != nil {
 					return
+				}
+				if session != nil {
+					session.HistoryMu.Lock()
+					session.History = append(session.History, data...)
+					if len(session.History) > 100000 {
+						session.History = session.History[len(session.History)-100000:]
+					}
+					session.HistoryMu.Unlock()
+
+					session.ClientMu.Lock()
+					for viewer := range session.Clients {
+						_ = viewer.WriteMessage(websocket.BinaryMessage, data)
+					}
+					session.ClientMu.Unlock()
 				}
 			}
 			if readErr != nil {
@@ -397,9 +466,138 @@ func handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 		case "r":
 			if msg.C > 0 && msg.R > 0 {
 				cpty.Resize(msg.C, msg.R)
+				if session != nil {
+					session.SizeMu.Lock()
+					session.Cols = msg.C
+					session.Rows = msg.R
+					session.SizeMu.Unlock()
+
+					session.ClientMu.Lock()
+					sizeMsg := []byte(fmt.Sprintf("size:%d,%d", msg.C, msg.R))
+					for viewer := range session.Clients {
+						_ = viewer.WriteMessage(websocket.TextMessage, sizeMsg)
+					}
+					session.ClientMu.Unlock()
+				}
 			}
 		}
 	}
+}
+
+func handleCastPage(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	htmlBytes, err := webFS.ReadFile("web/cast.html")
+	if err != nil {
+		http.Error(w, "Cast template not found", 404)
+		return
+	}
+	w.Write(htmlBytes)
+}
+
+func handleTerminalViewWS(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.URL.Query().Get("session")
+	if sessionID == "" {
+		http.Error(w, "Missing session ID", 400)
+		return
+	}
+
+	activeSessionsMu.Lock()
+	session, exists := activeSessions[sessionID]
+	activeSessionsMu.Unlock()
+
+	if !exists {
+		http.Error(w, "Session not found", 404)
+		return
+	}
+
+	conn, err := wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	session.ClientMu.Lock()
+	session.Clients[conn] = true
+	session.ClientMu.Unlock()
+
+	defer func() {
+		session.ClientMu.Lock()
+		delete(session.Clients, conn)
+		session.ClientMu.Unlock()
+	}()
+
+	session.SizeMu.Lock()
+	c, rows := session.Cols, session.Rows
+	session.SizeMu.Unlock()
+
+	sizeMsg := []byte(fmt.Sprintf("size:%d,%d", c, rows))
+	if err := conn.WriteMessage(websocket.TextMessage, sizeMsg); err != nil {
+		return
+	}
+
+	session.HistoryMu.Lock()
+	history := make([]byte, len(session.History))
+	copy(history, session.History)
+	session.HistoryMu.Unlock()
+
+	if len(history) > 0 {
+		if err := conn.WriteMessage(websocket.BinaryMessage, history); err != nil {
+			return
+		}
+	}
+
+	if session.Cpty != nil {
+		_, _ = session.Cpty.Write([]byte{12})
+	}
+
+	for {
+		_, _, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+	}
+}
+
+func handleRemoteStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		w.Header().Set("Content-Type", "application/json")
+		activeSessionsMu.Lock()
+		casting := make(map[string]int)
+		for id, session := range activeSessions {
+			session.ClientMu.Lock()
+			count := len(session.Clients)
+			session.ClientMu.Unlock()
+			if count > 0 {
+				casting[id] = count
+			}
+		}
+		activeSessionsMu.Unlock()
+
+		response := map[string]any{
+			"networkAccess": networkAccessEnabled,
+			"casting":       casting,
+		}
+		_ = json.NewEncoder(w).Encode(response)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		activeSessionsMu.Lock()
+		for _, session := range activeSessions {
+			session.ClientMu.Lock()
+			for conn := range session.Clients {
+				_ = conn.WriteMessage(websocket.TextMessage, []byte("stop"))
+				conn.Close()
+				delete(session.Clients, conn)
+			}
+			session.ClientMu.Unlock()
+		}
+		activeSessionsMu.Unlock()
+		w.WriteHeader(200)
+		return
+	}
+
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
 
 func openAppWindow(url string) {
@@ -517,6 +715,9 @@ func serveTerminalWindow() {
 	})
 	mux.Handle("/web/", http.FileServer(http.FS(webFS)))
 	mux.HandleFunc("/ws", handleTerminalWS)
+	mux.HandleFunc("/ws/view", handleTerminalViewWS)
+	mux.HandleFunc("/cast", handleCastPage)
+	mux.HandleFunc("/remote-status", handleRemoteStatus)
 	mux.HandleFunc("/control", handleControlWS)
 	mux.HandleFunc("/open", handleOpenRequest)
 	mux.HandleFunc("/diff", handleDiffRoute)

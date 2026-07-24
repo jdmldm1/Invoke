@@ -101,11 +101,6 @@
     <div id="barTrack"><div id="barFill"></div></div>
   </div>
   <script>
-    // The real app loads underneath this overlay in a same-document iframe
-    // (never a top-level navigation) so there's no flash-of-white while the
-    // new document's stylesheet parses. Go sets #app-frame's src once the
-    // local server is confirmed up; we fade the overlay out on the iframe's
-    // load event, with a floor so the entrance animation always gets to land.
     var STAGE_START = Date.now();
     var MIN_VISIBLE_MS = 900;
     document.getElementById('app-frame').addEventListener('load', function () {

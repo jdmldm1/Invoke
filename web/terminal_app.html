@@ -212,6 +212,9 @@
       <div class="tbtn" id="btnBrowse" title="Folder Browser">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>Browse
       </div>
+      <div class="tbtn" id="btnCast" title="Cast Screen (Read-Only)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>Cast
+      </div>
       <div class="tbtn" id="btnSplitV" title="Split right (Ctrl+Shift+D)">
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>Split
       </div>
@@ -247,6 +250,7 @@
     <div class="seg" id="segError"><span id="fError" title="Click to diagnose error with AI"></span></div>
     <div class="spacer"></div>
     <div class="seg warn" id="segNetwork" title="Remote network access is ON — click to manage" style="cursor:pointer"><span id="fNetwork"></span></div>
+    <div class="seg" id="segCast" title="Screen casting is active — click to manage" style="cursor:pointer; display:none; color:#38bdf8; font-weight:bold;"><span id="fCast"></span></div>
     <div class="seg warn" id="segBroadcast"><span id="fBroadcast"></span></div>
     <div class="seg" id="segSel"><span id="fSel"></span></div>
     <div class="seg" id="segZoom"><span id="fZoom"></span></div>
@@ -3163,6 +3167,7 @@
   class Pane{
     constructor(tab, cwd){
       this.tab=tab; this.initialCwd=cwd||''; this.cwd=''; this.branch=''; this.dirty=false; this.shellKind='pwsh';
+      this.sessionId='s_'+Math.random().toString(36).substring(2,10);
       this.el=document.createElement('div'); this.el.className='pane';
       this.host=document.createElement('div'); this.host.className='term';
       this.el.appendChild(this.host);
@@ -3263,7 +3268,7 @@
         if(self===activePane) { updateFooter(); saveSessionState(); } return true;
       }); }catch(_){}
       this.doFit();
-      let q='cols='+(this.term.cols||80)+'&rows='+(this.term.rows||24);
+      let q='cols='+(this.term.cols||80)+'&rows='+(this.term.rows||24)+'&session='+this.sessionId;
       if(this.initialCwd) q+='&cwd='+encodeURIComponent(this.initialCwd);
       this.ws=new WebSocket((location.protocol==='https:'?'wss':'ws')+'://'+location.host+'/ws?'+q);
       this.ws.binaryType='arraybuffer';
@@ -3672,7 +3677,7 @@
       else { const n=activeTab.panes.size; paneTxt=n+(n===1?' pane':' panes'); } }
     document.getElementById('fPanes').textContent=paneTxt;
     document.getElementById('fTabs').textContent=tabs.length+(tabs.length===1?' tab':' tabs');
-    seg('fNetwork', networkAccessOn?'🔓 LAN':'');
+    seg('fNetwork', networkAccessOn?'🔓 LAN':'🔒 Local Only');
     seg('fBroadcast', broadcastOn?'BROADCAST':'');
     seg('fSel', selChars?(selChars+' selected'):'');
     seg('fZoom', zoomLevel?('font '+(BASE_FONT+zoomLevel)+'px'):'');
@@ -4151,6 +4156,50 @@
     updateFooter();
   }
 
+  function showCastModal() {
+    if (!activePane || !(activePane instanceof Pane)) {
+      alert("Please select a terminal tab to cast.");
+      return;
+    }
+    const sessionUrl = window.location.origin + '/cast?session=' + activePane.sessionId;
+    const overlay = document.createElement('div');
+    overlay.className = 'snippet-modal-overlay';
+    const modal = document.createElement('div');
+    modal.className = 'snippet-modal';
+    modal.style.width = '480px';
+    let contentHtml = '';
+    contentHtml += '<h3 style="margin:0 0 10px;font-size:16px;color:var(--terminal-accent);display:flex;align-items:center;gap:8px;">📺 Cast Terminal Session (Read-Only)</h3>';
+    contentHtml += '<p style="font-size:12px;color:var(--muted);margin-bottom:18px;line-height:1.5;">Share a live, read-only cast of your current terminal screen. Coworkers will see exactly what is on your terminal (including interactive TUI tools like k9s) in real time, but will not be able to send any inputs.</p>';
+    contentHtml += '<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:6px;">Shareable Link</label>';
+    contentHtml += '<div style="display:flex;gap:8px;margin-bottom:18px;">';
+    contentHtml += '  <input type="text" id="cast-link-input" readonly value="' + sessionUrl + '" style="flex:1;background:#0d0d0d;border:1px solid var(--border2);color:var(--text);padding:8px 12px;border-radius:6px;font-family:monospace;font-size:12px;outline:none;" />';
+    contentHtml += '  <button class="modal-btn" id="cast-btn-copy" style="padding:0 16px;border-radius:6px;cursor:pointer;font-weight:600;background:var(--terminal-accent);color:#000;border:none;">📋 Copy</button>';
+    contentHtml += '</div>';
+    contentHtml += '<div class="modal-btns" style="display:flex;justify-content:flex-end;margin-top:20px;">';
+    contentHtml += '  <button class="modal-btn cancel" id="cast-btn-close" style="padding:8px 20px;border-radius:6px;cursor:pointer;background:var(--panel2);color:var(--muted);border:1px solid var(--border2);">Close</button>';
+    contentHtml += '</div>';
+    modal.innerHTML = contentHtml;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    const input = modal.querySelector('#cast-link-input');
+    input.onclick = () => input.select();
+    modal.querySelector('#cast-btn-copy').onclick = () => {
+      input.select();
+      copyTextToClipboard(input.value)
+        .then(() => {
+          const btn = modal.querySelector('#cast-btn-copy');
+          btn.textContent = '✓ Copied';
+          setTimeout(() => { btn.textContent = '📋 Copy'; }, 2000);
+        })
+        .catch(err => {
+          alert('Failed to copy: ' + err);
+        });
+    };
+    modal.querySelector('#cast-btn-close').onclick = () => {
+      overlay.remove();
+    };
+  }
+
   const refreshEl = document.getElementById('sb-refresh');
   if (refreshEl) refreshEl.onclick = () => refreshSidebar();
   const scaffoldEl = document.getElementById('sb-scaffold');
@@ -4161,6 +4210,111 @@
 
   const btnBrowseEl = document.getElementById('btnBrowse');
   if (btnBrowseEl) btnBrowseEl.addEventListener('click', () => openBrowserTab());
+
+  const btnCastEl = document.getElementById('btnCast');
+  if (btnCastEl) btnCastEl.addEventListener('click', showCastModal);
+
+  let activeCasts = {};
+
+  function refreshRemoteStatus() {
+    fetch('/remote-status')
+      .then(r => r.json())
+      .then(data => {
+        networkAccessOn = data.networkAccess;
+        seg('fNetwork', networkAccessOn ? '🔓 LAN' : '🔒 Local Only');
+        const netSeg = document.getElementById('segNetwork');
+        if (netSeg) {
+          netSeg.className = networkAccessOn ? 'seg warn' : 'seg';
+          netSeg.title = networkAccessOn ? 'Remote network access is ON — click to manage' : 'Remote network access is OFF — click to enable';
+        }
+
+        activeCasts = data.casting || {};
+        let totalViewers = 0;
+        for (let sid in activeCasts) {
+          totalViewers += activeCasts[sid];
+        }
+
+        const castSeg = document.getElementById('segCast');
+        if (castSeg) {
+          if (totalViewers > 0) {
+            castSeg.style.display = 'inline-block';
+            seg('fCast', '📺 Casting (' + totalViewers + (totalViewers === 1 ? ' viewer)' : ' viewers)'));
+          } else {
+            castSeg.style.display = 'none';
+          }
+        }
+      })
+      .catch(() => {});
+  }
+
+  function showManageCastModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'snippet-modal-overlay';
+    const modal = document.createElement('div');
+    modal.className = 'snippet-modal';
+    modal.style.width = '440px';
+
+    let contentHtml = '';
+    contentHtml += '<h3 style="margin:0 0 12px;font-size:16px;color:#38bdf8;display:flex;align-items:center;gap:8px;">📺 Active Screen Casts</h3>';
+    contentHtml += '<p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5;">The following terminal sessions are currently broadcasting to live viewers:</p>';
+    contentHtml += '<div style="background:#0d0d0d;border:1px solid var(--border2);border-radius:6px;padding:12px;max-height:200px;overflow-y:auto;margin-bottom:20px;">';
+    
+    let hasCasts = false;
+    for (let sid in activeCasts) {
+      const viewerCount = activeCasts[sid];
+      if (viewerCount > 0) {
+        hasCasts = true;
+        let tabName = "Terminal Session";
+        const termTab = tabs.find(t => t.type === 'term' && Array.from(t.panes).some(p => p.sessionId === sid));
+        if (termTab) {
+          tabName = termTab.name;
+        }
+        contentHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.03);">';
+        contentHtml += '  <span style="font-weight:500;color:var(--text);">' + tabName + '</span>';
+        contentHtml += '  <span style="font-size:11px;color:var(--muted);background:rgba(56,189,248,0.1);padding:2px 6px;border-radius:4px;">' + viewerCount + (viewerCount === 1 ? ' viewer' : ' viewers') + '</span>';
+        contentHtml += '</div>';
+      }
+    }
+    if (!hasCasts) {
+      contentHtml += '<div style="color:var(--muted);font-style:italic;text-align:center;padding:10px 0;">No active broadcasts.</div>';
+    }
+    contentHtml += '</div>';
+
+    contentHtml += '<div class="modal-btns" style="display:flex;justify-content:space-between;align-items:center;">';
+    if (hasCasts) {
+      contentHtml += '  <button class="modal-btn" id="btn-stop-all-casts" style="padding:8px 16px;border-radius:6px;cursor:pointer;background:#ef4444;color:#fff;border:none;font-weight:600;">🛑 Stop All Casts</button>';
+    } else {
+      contentHtml += '  <div></div>';
+    }
+    contentHtml += '  <button class="modal-btn cancel" id="manage-cast-close" style="padding:8px 16px;border-radius:6px;cursor:pointer;background:var(--panel2);color:var(--muted);border:1px solid var(--border2);">Close</button>';
+    contentHtml += '</div>';
+
+    modal.innerHTML = contentHtml;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const closeBtn = modal.querySelector('#manage-cast-close');
+    closeBtn.onclick = () => overlay.remove();
+
+    const stopBtn = modal.querySelector('#btn-stop-all-casts');
+    if (stopBtn) {
+      stopBtn.onclick = () => {
+        fetch('/remote-status', { method: 'POST' })
+          .then(r => {
+            if (r.ok) {
+              overlay.remove();
+              refreshRemoteStatus();
+            } else {
+              alert('Failed to stop casts.');
+            }
+          })
+          .catch(() => alert('Error connecting to server.'));
+      };
+    }
+  }
+
+  const segCastEl = document.getElementById('segCast');
+  if (segCastEl) segCastEl.addEventListener('click', showManageCastModal);
 
   window.addEventListener('message', function(e) {
     if (!e.data) return;
@@ -4180,6 +4334,8 @@
   loadSessionsState();
   refreshNetworkStatus();
   refreshKeepAliveStatus();
+  setInterval(refreshRemoteStatus, 2000);
+  refreshRemoteStatus();
   updateFooter();
 })();
 </script>

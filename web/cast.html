@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Invoke Live Cast</title>
+  <link rel="stylesheet" href="/web/xterm.min.css">
+  <script src="/web/xterm.min.js"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #070709;
+      --panel: #111115;
+      --border: rgba(255, 255, 255, 0.06);
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #38bdf8;
+      --danger: #ef4444;
+      --success: #10b981;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      background: var(--panel);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-shrink: 0;
+    }
+    .title-area {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .live-badge {
+      background: rgba(239, 68, 68, 0.15);
+      color: var(--danger);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      padding: 2px 8px;
+      border-radius: 4px;
+      letter-spacing: 0.5px;
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .live-badge.connected {
+      background: rgba(16, 185, 129, 0.15);
+      color: var(--success);
+    }
+    .live-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+    }
+    #terminal-container {
+      flex: 1;
+      position: relative;
+      background: #000;
+      padding: 20px;
+      overflow: auto;
+      display: flex;
+      justify-content: center;
+      align-items: flex-start;
+    }
+    #terminal-host {
+      width: auto;
+      height: auto;
+    }
+    .xterm-viewport::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    .xterm-viewport::-webkit-scrollbar-thumb {
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 4px;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title-area">
+      <span style="font-size: 18px;">📺</span>
+      <span style="font-weight: 600; font-size: 14px;">Invoke Live Cast</span>
+      <span style="color: var(--muted); font-size: 13px;">(Read-Only View)</span>
+    </div>
+    <div class="live-badge" id="status-badge">
+      <span class="live-dot"></span>
+      <span id="status-text">Disconnected</span>
+    </div>
+  </header>
+  <div id="terminal-container">
+    <div id="terminal-host"></div>
+  </div>
+  <script>
+    const params = new URLSearchParams(window.location.search);
+    const session = params.get('session');
+    
+    if (!session) {
+      document.getElementById('terminal-container').innerHTML = '<div style="color: var(--danger); font-family: monospace; font-size: 14px; text-align: center; padding: 40px;">Error: No session parameter provided in URL.</div>';
+    } else {
+      const term = new Terminal({
+        theme: {
+          background: '#000000',
+          foreground: '#f1f5f9',
+          cursor: 'transparent',
+          black: '#000000',
+          red: '#ef4444',
+          green: '#22c55e',
+          yellow: '#eab308',
+          blue: '#3b82f6',
+          magenta: '#a855f7',
+          cyan: '#06b6d4',
+          white: '#cbd5e1',
+          brightBlack: '#64748b',
+          brightRed: '#f87171',
+          brightGreen: '#4ade80',
+          brightYellow: '#facc15',
+          brightBlue: '#60a5fa',
+          brightMagenta: '#c084fc',
+          brightCyan: '#22d3ee',
+          brightWhite: '#f8fafc'
+        },
+        fontFamily: "'JetBrains Mono', 'Cascadia Code', monospace",
+        fontSize: 13,
+        lineHeight: 1.25,
+        cursorBlink: false,
+        convertEol: true
+      });
+      
+      const host = document.getElementById('terminal-host');
+      term.open(host);
+      
+      function updateStatus(connected) {
+        const badge = document.getElementById('status-badge');
+        const text = document.getElementById('status-text');
+        if (connected) {
+          badge.classList.add('connected');
+          text.textContent = 'Live';
+        } else {
+          badge.classList.remove('connected');
+          text.textContent = 'Disconnected';
+        }
+      }
+
+      const wsProtocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+      const wsUrl = wsProtocol + '://' + window.location.host + '/ws/view?session=' + encodeURIComponent(session);
+      const ws = new WebSocket(wsUrl);
+      ws.binaryType = 'arraybuffer';
+
+      ws.onopen = () => {
+        updateStatus(true);
+        term.write('\x1b[32m[Connected to live stream]\x1b[0m\r\n');
+      };
+
+      ws.onclose = () => {
+        updateStatus(false);
+        term.write('\r\n\x1b[31m[Live stream disconnected]\x1b[0m\r\n');
+      };
+
+      ws.onerror = (err) => {
+        console.error(err);
+      };
+
+      ws.onmessage = (e) => {
+        if (typeof e.data === 'string') {
+          if (e.data.startsWith('size:')) {
+            const parts = e.data.substring(5).split(',');
+            const cols = parseInt(parts[0], 10);
+            const rows = parseInt(parts[1], 10);
+            if (cols > 0 && rows > 0) {
+              term.resize(cols, rows);
+            }
+          }
+        } else {
+          term.write(new Uint8Array(e.data));
+        }
+      };
+    }
+  </script>
+</body>
+</html>
