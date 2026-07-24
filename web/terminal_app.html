@@ -807,6 +807,339 @@
       });
   }
 
+  const BUILTIN_SCHEMAS = {
+    ffmpeg: [
+      { name: '-i', type: 'string', description: 'Input video/audio file path', placeholder: 'input.mp4' },
+      { name: '-c:v', type: 'choice', choices: ['copy', 'libx264', 'libx265', 'libvpx-vp9', 'libaom-av1'], description: 'Video codec', default: 'libx264' },
+      { name: '-c:a', type: 'choice', choices: ['copy', 'aac', 'mp3', 'opus', 'flac'], description: 'Audio codec', default: 'aac' },
+      { name: '-crf', type: 'string', description: 'Constant Rate Factor (0-51, lower is better quality)', placeholder: '23' },
+      { name: '-b:v', type: 'string', description: 'Video bitrate (e.g., 2M or 1500k)', placeholder: '2M' },
+      { name: '-vf', type: 'choice', choices: ['', 'scale=1920:1080', 'scale=1280:720', 'scale=640:360'], description: 'Video resolution scale filter', default: '' },
+      { name: '-an', type: 'boolean', description: 'Disable audio streams (mute)', default: false },
+      { name: '-vn', type: 'boolean', description: 'Disable video streams', default: false },
+      { name: 'output', type: 'string', description: 'Output destination file path', placeholder: 'output.mp4' }
+    ],
+    tar: [
+      { name: '-c', type: 'boolean', description: 'Create a new archive', default: true },
+      { name: '-x', type: 'boolean', description: 'Extract files from an archive', default: false },
+      { name: '-z', type: 'boolean', description: 'Compress archive using gzip (.tar.gz)', default: true },
+      { name: '-v', type: 'boolean', description: 'Verbosely list files processed', default: true },
+      { name: '-f', type: 'string', description: 'Archive filename', placeholder: 'archive.tar.gz' },
+      { name: 'files', type: 'string', description: 'Files or folders to compress/extract', placeholder: 'folder_name' }
+    ],
+    curl: [
+      { name: '-X', type: 'choice', choices: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH'], description: 'HTTP request method', default: 'GET' },
+      { name: '-H', type: 'string', description: 'HTTP header', placeholder: '"Content-Type: application/json"' },
+      { name: '-d', type: 'string', description: 'HTTP post data payload', placeholder: '\'{"username": "admin"}\'' },
+      { name: '-i', type: 'boolean', description: 'Include response headers in output', default: false },
+      { name: '-k', type: 'boolean', description: 'Allow insecure connection (ignore SSL)', default: false },
+      { name: '-L', type: 'boolean', description: 'Follow server redirects', default: true },
+      { name: '-o', type: 'string', description: 'Save output to local file instead of stdout', placeholder: 'response.json' },
+      { name: 'url', type: 'string', description: 'Target destination URL', placeholder: 'https://api.example.com/data' }
+    ],
+    'docker run': [
+      { name: '-d', type: 'boolean', description: 'Run container in background (detached mode)', default: true },
+      { name: '-it', type: 'boolean', description: 'Allocate pseudo-TTY & keep stdin open (interactive)', default: false },
+      { name: '--name', type: 'string', description: 'Name to assign to the container', placeholder: 'my-app' },
+      { name: '-p', type: 'string', description: 'Map port from host to container (host:container)', placeholder: '8080:80' },
+      { name: '-v', type: 'string', description: 'Mount volume path (host:container)', placeholder: 'C:\\data:/app/data' },
+      { name: '-e', type: 'string', description: 'Set environment variable (KEY=value)', placeholder: 'PORT=80' },
+      { name: '--rm', type: 'boolean', description: 'Automatically remove container upon exit', default: false },
+      { name: 'image', type: 'string', description: 'Docker image to run', placeholder: 'nginx:alpine' }
+    ]
+  };
+
+  function openCLIHelperModal(initialTool, pane) {
+    const overlay = document.createElement('div');
+    overlay.className = 'snippet-modal-overlay';
+    overlay.style.zIndex = '30000';
+
+    const modal = document.createElement('div');
+    modal.className = 'snippet-modal';
+    modal.style.width = '600px';
+    modal.style.maxWidth = '95%';
+    modal.style.display = 'flex';
+    modal.style.flexDirection = 'column';
+    modal.style.gap = '14px';
+
+    const title = document.createElement('h3');
+    title.textContent = '⚡ Intelligent CLI Helper';
+    title.style.margin = '0';
+    modal.appendChild(title);
+
+    const selectorRow = document.createElement('div');
+    selectorRow.style.cssText = 'display:flex;gap:10px;align-items:center;margin-bottom:6px';
+
+    const toolInput = document.createElement('input');
+    toolInput.type = 'text';
+    toolInput.value = initialTool || '';
+    toolInput.placeholder = 'Enter command (e.g. ffmpeg, tar, curl, docker run)...';
+    toolInput.style.cssText = 'flex:1;background:#0d0d0d;border:1px solid var(--border2);border-radius:6px;padding:8px 10px;color:var(--text);font-size:13px;outline:none';
+    selectorRow.appendChild(toolInput);
+
+    const loadBtn = document.createElement('button');
+    loadBtn.className = 'modal-btn run';
+    loadBtn.textContent = 'Load / Generate';
+    loadBtn.style.padding = '8px 16px';
+    loadBtn.style.margin = '0';
+    selectorRow.appendChild(loadBtn);
+    modal.appendChild(selectorRow);
+
+    const formWrap = document.createElement('div');
+    formWrap.style.cssText = 'flex:1;max-height:350px;overflow-y:auto;border:1px solid var(--border2);border-radius:6px;padding:12px;background:#141414;display:flex;flex-direction:column;gap:12px';
+    modal.appendChild(formWrap);
+
+    const previewWrap = document.createElement('div');
+    previewWrap.style.cssText = 'display:flex;flex-direction:column;gap:4px';
+    
+    const previewLabel = document.createElement('label');
+    previewLabel.textContent = 'Generated Command Preview:';
+    previewLabel.style.cssText = 'font-size:11px;color:var(--muted);font-weight:600';
+    previewWrap.appendChild(previewLabel);
+
+    const previewBox = document.createElement('div');
+    previewBox.style.cssText = 'font-family:"Cascadia Code","Consolas",monospace;font-size:12px;color:var(--blue);background:#0d0d0d;border:1px solid var(--border2);border-radius:6px;padding:10px 14px;white-space:pre-wrap;word-break:break-all;min-height:38px';
+    previewWrap.appendChild(previewBox);
+    modal.appendChild(previewWrap);
+
+    const actionRow = document.createElement('div');
+    actionRow.className = 'modal-btns';
+
+    const runBtn = document.createElement('button');
+    runBtn.className = 'modal-btn run';
+    runBtn.textContent = 'Run in Terminal';
+    actionRow.appendChild(runBtn);
+
+    const insertBtn = document.createElement('button');
+    insertBtn.className = 'modal-btn cancel';
+    insertBtn.textContent = 'Insert Code';
+    insertBtn.style.borderColor = 'var(--blue)';
+    insertBtn.style.color = 'var(--blue)';
+    actionRow.appendChild(insertBtn);
+
+    const cancelBtn = document.createElement('button');
+    cancelBtn.className = 'modal-btn cancel';
+    cancelBtn.textContent = 'Cancel';
+    actionRow.appendChild(cancelBtn);
+
+    modal.appendChild(actionRow);
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    let activeSchema = [];
+
+    function updatePreview() {
+      const parts = [];
+      const toolBase = toolInput.value.trim();
+      if (!toolBase) {
+        previewBox.textContent = '';
+        return;
+      }
+      parts.push(toolBase);
+
+      const inputs = formWrap.querySelectorAll('[data-flag]');
+      inputs.forEach(input => {
+        const flagName = input.getAttribute('data-flag');
+        const flagType = input.getAttribute('data-type');
+
+        if (flagType === 'boolean') {
+          if (input.checked) {
+            parts.push(flagName);
+          }
+        } else if (flagType === 'string' || flagType === 'choice') {
+          const val = input.value.trim();
+          if (val) {
+            if (flagName.startsWith('-') || flagName.startsWith('--')) {
+              if (val.indexOf(' ') >= 0 || val.indexOf('"') >= 0 || val.indexOf('\'') >= 0) {
+                parts.push(`${flagName} ${JSON.stringify(val)}`);
+              } else {
+                parts.push(`${flagName} ${val}`);
+              }
+            } else {
+              if (val.indexOf(' ') >= 0 || val.indexOf('"') >= 0 || val.indexOf('\'') >= 0) {
+                parts.push(JSON.stringify(val));
+              } else {
+                parts.push(val);
+              }
+            }
+          }
+        }
+      });
+
+      previewBox.textContent = parts.join(' ');
+    }
+
+    function renderSchema(schema) {
+      formWrap.innerHTML = '';
+      activeSchema = schema;
+
+      if (!schema || schema.length === 0) {
+        formWrap.innerHTML = '<div style="color:var(--muted);text-align:center;padding:20px">No flags schema loaded. Enter a tool name above and load.</div>';
+        updatePreview();
+        return;
+      }
+
+      schema.forEach(item => {
+        const itemWrap = document.createElement('div');
+        itemWrap.style.cssText = 'display:flex;flex-direction:column;gap:4px';
+
+        const labelRow = document.createElement('div');
+        labelRow.style.cssText = 'display:flex;justify-content:space-between;align-items:center';
+
+        const label = document.createElement('span');
+        label.style.cssText = 'font-weight:600;font-size:12px';
+        label.textContent = item.name;
+        labelRow.appendChild(label);
+
+        if (item.description) {
+          const desc = document.createElement('span');
+          desc.style.cssText = 'font-size:11px;color:var(--muted);margin-left:8px;text-align:right';
+          desc.textContent = item.description;
+          labelRow.appendChild(desc);
+        }
+        itemWrap.appendChild(labelRow);
+
+        let inputEl;
+        if (item.type === 'boolean') {
+          labelRow.style.flexDirection = 'row-reverse';
+          labelRow.style.justifyContent = 'flex-end';
+          labelRow.style.gap = '8px';
+          
+          inputEl = document.createElement('input');
+          inputEl.type = 'checkbox';
+          inputEl.checked = !!item.default;
+          inputEl.style.cssText = 'width:16px;height:16px;margin:0;cursor:pointer;accent-color:var(--accent)';
+          labelRow.appendChild(inputEl);
+        } else if (item.type === 'choice') {
+          inputEl = document.createElement('select');
+          inputEl.style.cssText = 'background:#0d0d0d;border:1px solid var(--border2);border-radius:4px;padding:6px;color:var(--text);font-size:12px;outline:none';
+          
+          (item.choices || []).forEach(choice => {
+            const opt = document.createElement('option');
+            opt.value = choice;
+            opt.textContent = choice;
+            if (choice === item.default) opt.selected = true;
+            inputEl.appendChild(opt);
+          });
+        } else {
+          inputEl = document.createElement('input');
+          inputEl.type = 'text';
+          inputEl.value = item.default || '';
+          inputEl.placeholder = item.placeholder || '';
+          inputEl.style.cssText = 'background:#0d0d0d;border:1px solid var(--border2);border-radius:4px;padding:6px 10px;color:var(--text);font-size:12px;outline:none';
+        }
+
+        inputEl.setAttribute('data-flag', item.name);
+        inputEl.setAttribute('data-type', item.type);
+        inputEl.addEventListener('input', updatePreview);
+        inputEl.addEventListener('change', updatePreview);
+
+        if (item.type !== 'boolean') {
+          itemWrap.appendChild(inputEl);
+          formWrap.appendChild(itemWrap);
+        } else {
+          formWrap.appendChild(labelRow);
+        }
+      });
+
+      updatePreview();
+    }
+
+    function loadToolSchema(toolName) {
+      const name = toolName.trim().toLowerCase();
+      if (!name) return;
+
+      if (BUILTIN_SCHEMAS[name]) {
+        renderSchema(BUILTIN_SCHEMAS[name]);
+        return;
+      }
+
+      if (name === 'docker' && BUILTIN_SCHEMAS['docker run']) {
+        renderSchema(BUILTIN_SCHEMAS['docker run']);
+        return;
+      }
+
+      formWrap.innerHTML = `<div style="text-align:center;padding:30px;color:var(--accent)">
+        <div style="font-size:16px;font-weight:bold;margin-bottom:8px">🤖 AI Generating Schema...</div>
+        <div style="font-size:11px;color:var(--muted)">Contacting local Ollama model to fetch flags definitions for "${toolName}"</div>
+      </div>`;
+      
+      fetch('/ai-cli-schema', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({tool: toolName})
+      })
+      .then(r => {
+        if (!r.ok) throw new Error('AI Schema generation failed');
+        return r.json();
+      })
+      .then(schema => {
+        renderSchema(schema);
+      })
+      .catch(err => {
+        console.error(err);
+        formWrap.innerHTML = `<div style="text-align:center;padding:20px;color:var(--bad)">
+          <div style="font-weight:bold">Failed to generate AI schema</div>
+          <div style="font-size:11px;margin-bottom:12px">${err.message}</div>
+          <button class="modal-btn cancel" id="schema-retry" style="padding:4px 12px;font-size:11px">Use Raw Text Input</button>
+        </div>`;
+        
+        document.getElementById('schema-retry').onclick = () => {
+          renderSchema([
+            { name: 'arguments', type: 'string', description: 'Specify flags and values manually', placeholder: '-a -b val' }
+          ]);
+        };
+        updatePreview();
+      });
+    }
+
+    loadBtn.onclick = () => loadToolSchema(toolInput.value);
+    toolInput.onkeydown = e => { if (e.key === 'Enter') loadToolSchema(toolInput.value); };
+
+    runBtn.onclick = () => {
+      const cmd = previewBox.textContent.trim();
+      if (cmd && pane) {
+        pane.send({t: 'i', d: cmd + '\r'});
+        pane.focus();
+      }
+      overlay.remove();
+    };
+
+    insertBtn.onclick = () => {
+      const cmd = previewBox.textContent.trim();
+      if (cmd && pane) {
+        pane.send({t: 'i', d: cmd});
+        pane.focus();
+      }
+      overlay.remove();
+    };
+
+    cancelBtn.onclick = () => {
+      overlay.remove();
+      if (pane) setTimeout(() => pane.focus(), 50);
+    };
+
+    overlay.onclick = e => {
+      if (e.target === overlay) {
+        overlay.remove();
+        if (pane) setTimeout(() => pane.focus(), 50);
+      }
+    };
+
+    if (initialTool) {
+      loadToolSchema(initialTool);
+    } else {
+      renderSchema([]);
+    }
+  }
+
+  function openCLIHelperPromptModal() {
+    const tool = prompt('Enter a CLI tool name (e.g. ffmpeg, tar, curl, git):');
+    if (tool !== null) {
+      openCLIHelperModal(tool.trim(), activePane);
+    }
+  }
+
   function openHistoryModal() {
     fetch('/history')
       .then(r => r.json())
@@ -1308,6 +1641,63 @@
     }, 50);
   }
 
+  function getCurrentInputLine(pane) {
+    if (!pane || !pane.term) return '';
+    const buf = pane.term.buffer.active;
+    const lineY = buf.cursorY + buf.baseY;
+    const lineStr = buf.getLine(lineY);
+    return lineStr ? lineStr.translateToString() : '';
+  }
+
+  let historyCache = [];
+  function updateHistoryCache() {
+    fetch('/history')
+      .then(r => r.json())
+      .then(history => {
+        if (history && history.length > 0) {
+          historyCache = history;
+        }
+      })
+      .catch(() => {});
+  }
+  updateHistoryCache();
+  setInterval(updateHistoryCache, 15000);
+
+  function fetchGitStatusFiles(pane) {
+    const cacheKey = 'gitFiles';
+    if (contextCache.lastUpdate[cacheKey] && Date.now() - contextCache.lastUpdate[cacheKey] < 5000) {
+      return Promise.resolve(contextCache.gitFiles || []);
+    }
+
+    return fetch('/exec-bg', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({cmd: 'git status --porcelain', cwd: pane.cwd || ''})
+    })
+    .then(r => r.json())
+    .then(d => {
+      let files = [];
+      if (d.output) {
+        files = d.output.trim().split('\n').filter(l => l).map(line => {
+          return line.substring(3).trim().replace(/^"/, '').replace(/"$/, '');
+        });
+        contextCache.gitFiles = files;
+        contextCache.lastUpdate[cacheKey] = Date.now();
+      }
+      return files;
+    })
+    .catch(() => []);
+  }
+
+  function fetchFilesForPane(pane, targetDir) {
+    return fetch('/fs?dir=' + encodeURIComponent(targetDir))
+      .then(r => r.json())
+      .then(data => {
+        return data.entries || [];
+      })
+      .catch(() => []);
+  }
+
   const ghostEl = document.getElementById('ghost-text');
   let ghostText = '';
   let ghostSuggestions = [];
@@ -1654,8 +2044,109 @@
         });
       }
     }
+    else if (cleanLine.startsWith('git add ') && cleanLine.length > 8) {
+      const partial = cleanLine.substring(8);
+      fetchGitStatusFiles(pane).then(files => {
+        const currentLine = getCurrentInputLine(pane);
+        const currentClean = currentLine.replace(/^[❯$#>]\s*/, '').trim();
+        if (files && files.length > 0 && currentClean.startsWith('git add ')) {
+          const currentPartial = currentClean.substring(8);
+          const matches = files.filter(f => f.toLowerCase().startsWith(currentPartial.toLowerCase()));
+          if (matches.length > 0) {
+            const newSuggestions = matches.slice(0, 5).map(f => f.substring(currentPartial.length));
+            if (newSuggestions.length > 0) {
+              if (ghostActive) {
+                const currentSuggestions = [...ghostSuggestions];
+                newSuggestions.forEach(s => {
+                  if (!currentSuggestions.includes(s)) {
+                    currentSuggestions.push(s);
+                  }
+                });
+                showGhost(currentSuggestions, pane);
+              } else {
+                showGhost(newSuggestions, pane);
+              }
+            }
+          }
+        }
+      });
+
+      const cached = contextCache.gitFiles || [];
+      cached.forEach(f => {
+        if (f.toLowerCase().startsWith(partial.toLowerCase())) {
+          const completion = f.substring(partial.length);
+          if (completion) suggestions.push(completion);
+        }
+      });
+    }
     else if (cleanLine.match(/^(docker|git|kubectl|npm)\s+\w*$/)) {
       suggestions.push(...getCommonFlags(cleanLine));
+    }
+
+    // General path / file autocomplete (Feature 7)
+    const words = cleanLine.split(/\s+/);
+    const lastWord = cleanLine.endsWith(' ') ? '' : words[words.length - 1];
+    const isPathLike = lastWord.startsWith('.') || lastWord.includes('/') || lastWord.includes('\\');
+    const isArgument = words.length > 1;
+
+    if (isPathLike || isArgument) {
+      let dirPart = '';
+      let filePrefix = lastWord;
+
+      const lastSlash = Math.max(lastWord.lastIndexOf('/'), lastWord.lastIndexOf('\\'));
+      if (lastSlash >= 0) {
+        dirPart = lastWord.substring(0, lastSlash + 1);
+        filePrefix = lastWord.substring(lastSlash + 1);
+      }
+
+      let targetDir = pane.cwd || '.';
+      if (dirPart) {
+        if (dirPart.match(/^[a-zA-Z]:[/\\]/) || dirPart.startsWith('/') || dirPart.startsWith('\\')) {
+          targetDir = dirPart;
+        } else {
+          const sep = targetDir.endsWith('/') || targetDir.endsWith('\\') || dirPart.startsWith('/') || dirPart.startsWith('\\') ? '' : '/';
+          targetDir = targetDir + sep + dirPart;
+        }
+      }
+
+      fetchFilesForPane(pane, targetDir).then(entries => {
+        const currentLine = getCurrentInputLine(pane);
+        const currentClean = currentLine.replace(/^[❯$#>]\s*/, '').trim();
+        const currentWords = currentClean.split(/\s+/);
+        const currentLastWord = currentClean.endsWith(' ') ? '' : currentWords[currentWords.length - 1];
+        
+        if (currentLastWord !== lastWord) return;
+
+        let matches = entries || [];
+        if (filePrefix) {
+          matches = matches.filter(e => e.name.toLowerCase().startsWith(filePrefix.toLowerCase()));
+        }
+
+        const command = words[0].toLowerCase();
+        if (command === 'cd') {
+          matches = matches.filter(e => e.dir);
+        }
+
+        if (matches.length > 0) {
+          const completions = matches.slice(0, 8).map(e => {
+            let suffix = e.name.substring(filePrefix.length);
+            if (e.dir) suffix += '/';
+            return suffix;
+          });
+
+          if (completions.length > 0) {
+            if (ghostActive) {
+              const currentSuggestions = [...ghostSuggestions];
+              completions.forEach(c => {
+                if (!currentSuggestions.includes(c)) currentSuggestions.push(c);
+              });
+              showGhost(currentSuggestions, pane);
+            } else {
+              showGhost(completions, pane);
+            }
+          }
+        }
+      });
     }
 
     return suggestions;
@@ -1763,12 +2254,15 @@
   function getHistoricalCompletions(prefix) {
     const matches = [];
     const lowerPrefix = prefix.toLowerCase();
+    const allHistory = Array.from(new Set(customSuggestions.concat(historyCache)));
 
-    for (const cmd of customSuggestions) {
+    for (const cmd of allHistory) {
       if (cmd.toLowerCase().startsWith(lowerPrefix) && cmd !== prefix) {
         const completion = cmd.substring(prefix.length);
-        matches.push(completion);
-        if (matches.length >= 3) break;
+        if (!matches.includes(completion)) {
+          matches.push(completion);
+        }
+        if (matches.length >= 5) break;
       }
     }
 
@@ -1863,6 +2357,7 @@
     paletteIdx = 0;
     
     paletteItems = [
+      {label: "Intelligent CLI Helper...", action: () => openCLIHelperPromptModal()},
       {label: "New Terminal Tab", action: () => newTab(), shortcut: "Ctrl+Shift+T"},
       {label: "Split Pane Vertically", action: () => split('right'), shortcut: "Ctrl+Shift+D"},
       {label: "Split Pane Horizontally", action: () => split('down'), shortcut: "Ctrl+Shift+S"},
@@ -2309,6 +2804,7 @@
       ]},
       {label:'SCP Transfer', action:function(){openSCPTab();}},
       {label:'Remote Network Access...', action:function(){configureNetworkAccess();}, checked:function(){return networkAccessOn;}},
+      {label:'Intelligent CLI Helper...', action:function(){openCLIHelperPromptModal();}},
       {label:'Git Operations', submenu:[
         {label:'Status', action:function(){sendToActive('git status -sb');}},
         {label:'Pull', action:function(){sendToActive('git pull');}},
@@ -2383,6 +2879,36 @@
 
   function keyHandler(e){
     if(e.type!=='keydown') return true;
+
+    if (e.key === 'Enter') {
+      if (activePane) {
+        const term = activePane.term;
+        const buf = term.buffer.active;
+        const lineStr = buf.getLine(buf.cursorY + buf.baseY);
+        if (lineStr) {
+          const fullLine = lineStr.translateToString();
+          const lastPromptIdx = Math.max(
+            fullLine.lastIndexOf('>'), 
+            fullLine.lastIndexOf('$'), 
+            fullLine.lastIndexOf('\u276f'), 
+            fullLine.lastIndexOf('\u203a')
+          );
+          const typedInput = lastPromptIdx >= 0 ? fullLine.substring(lastPromptIdx + 1) : fullLine;
+          const trimmedInput = typedInput.trim();
+          
+          if (trimmedInput.startsWith('??')) {
+            const query = trimmedInput.substring(2).trim();
+            openCLIHelperModal(query, activePane);
+            
+            const deleteLen = typedInput.length;
+            const backspaces = '\x7f'.repeat(deleteLen);
+            activePane.send({t: 'i', d: backspaces});
+            
+            return false;
+          }
+        }
+      }
+    }
 
     if (paletteActive) {
       if (e.key === 'Escape') {

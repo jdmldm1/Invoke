@@ -566,6 +566,8 @@ func serveTerminalWindow() {
 	mux.HandleFunc("/exec-bg", handleExecBackground)
 	mux.HandleFunc("/network-access", handleNetworkAccess)
 	mux.HandleFunc("/remote-login", handleRemoteLogin)
+	mux.HandleFunc("/ai-cli-schema", handleAICLISchema)
+
 
 	go func() {
 		zero := 0

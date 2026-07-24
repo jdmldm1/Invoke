@@ -1139,3 +1139,84 @@ func handleAutoconfigureAI(w http.ResponseWriter, r *http.Request) {
 		"message": "AI Autoconfigure initiated! Started Ollama Docker container, triggered phi4-mini model pull in background, and saved local config.",
 	})
 }
+
+func handleAICLISchema(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, `{"error":"POST required"}`, http.StatusMethodNotAllowed)
+		return
+	}
+
+	var req struct {
+		Tool string `json:"tool"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || strings.TrimSpace(req.Tool) == "" {
+		http.Error(w, `{"error":"Invalid request payload"}`, http.StatusBadRequest)
+		return
+	}
+
+	cfg := loadConfig()
+	systemPrompt := "You are a CLI helper schema generator. Output ONLY a valid JSON array of objects representing the most common flags/parameters for the CLI tool '" + req.Tool + "'.\n" +
+		"Each object MUST have the following structure:\n" +
+		"- name: the flag string (e.g. '-i', '--port', or 'target' for a positional arg)\n" +
+		"- type: 'boolean' (for flags without value), 'string' (for flags with text input), or 'choice' (for flags with pre-defined values)\n" +
+		"- choices: (only for type 'choice') an array of strings representing options\n" +
+		"- description: a very short (1 sentence) explanation of what it does\n" +
+		"- default: (optional) default value\n" +
+		"- placeholder: (optional) placeholder text\n" +
+		"Output ONLY the raw JSON array. No explanations, no markdown block code fences, no markdown formatting."
+
+	payload := map[string]any{
+		"model": cfg.OllamaModel,
+		"messages": []map[string]string{
+			{"role": "system", "content": systemPrompt},
+			{"role": "user", "content": "Generate common flags schema for: " + req.Tool},
+		},
+		"stream":      false,
+		"temperature": 0.1,
+	}
+
+	body, _ := json.Marshal(payload)
+
+	client := &http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Post(cfg.OllamaHost+"/api/chat", "application/json", bytes.NewReader(body))
+	if err != nil {
+		http.Error(w, `{"error":"Failed to call AI: `+err.Error()+`"}`, http.StatusInternalServerError)
+		return
+	}
+	defer resp.Body.Close()
+
+	respBody, _ := io.ReadAll(resp.Body)
+	var ollamaResp struct {
+		Message struct {
+			Content string `json:"content"`
+		} `json:"message"`
+	}
+	if err := json.Unmarshal(respBody, &ollamaResp); err != nil {
+		http.Error(w, `{"error":"Failed to decode AI response"}`, http.StatusInternalServerError)
+		return
+	}
+
+	content := strings.TrimSpace(ollamaResp.Message.Content)
+	for _, prefix := range []string{"```json", "```javascript", "```"} {
+		if strings.HasPrefix(content, prefix) {
+			content = strings.TrimPrefix(content, prefix)
+			content = strings.TrimSuffix(content, "```")
+			content = strings.TrimSpace(content)
+			break
+		}
+	}
+
+	var testJSON []any
+	if err := json.Unmarshal([]byte(content), &testJSON); err != nil {
+		errResp, _ := json.Marshal(map[string]string{
+			"error": "AI did not return valid JSON schema",
+			"raw":   content,
+		})
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write(errResp)
+		return
+	}
+
+	w.Write([]byte(content))
+}
