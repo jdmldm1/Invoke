@@ -28,5 +28,5 @@ Thumbs.db
 .DS_Store
 
 # Local config (contains personal Ollama host/model preferences)
-.powerterm.json
-.powerterm_layouts.json
+.invoke.json
+.invoke_layouts.json

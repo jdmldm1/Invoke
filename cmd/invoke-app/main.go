@@ -4,6 +4,7 @@ package main
 
 import (
 	_ "embed"
+	"encoding/json"
 	"fmt"
 	"html"
 	"net"
@@ -45,13 +46,35 @@ func main() {
 		}
 	}
 
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		showError(fmt.Sprintf("Could not bind a local port:\n\n%v", err))
-		os.Exit(1)
+	port := 0
+	if p := os.Getenv("INVOKE_TERM_PORT"); p != "" {
+		if val, err := strconv.Atoi(p); err == nil && val > 0 {
+			port = val
+		}
 	}
-	port := l.Addr().(*net.TCPAddr).Port
-	l.Close()
+	if port == 0 {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			configBytes, err := os.ReadFile(filepath.Join(home, ".invoke.json"))
+			if err == nil {
+				var cfg struct {
+					ServerPort int `json:"server_port"`
+				}
+				if json.Unmarshal(configBytes, &cfg) == nil && cfg.ServerPort > 0 {
+					port = cfg.ServerPort
+				}
+			}
+		}
+	}
+	if port == 0 {
+		l, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			showError(fmt.Sprintf("Could not bind a local port:\n\n%v", err))
+			os.Exit(1)
+		}
+		port = l.Addr().(*net.TCPAddr).Port
+		l.Close()
+	}
 
 	url := fmt.Sprintf("http://127.0.0.1:%d", port)
 

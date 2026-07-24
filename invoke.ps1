@@ -11,7 +11,7 @@ if ($env:INVOKE_EXE -and (Test-Path $env:INVOKE_EXE)) {
     $script:_ptBin = "invoke.exe"
 }
 $script:_ptScript = $PSCommandPath
-$script:_ptMarks  = Join-Path $env:USERPROFILE ".powerterm_marks.json"
+$script:_ptMarks  = Join-Path $env:USERPROFILE ".invoke_marks.json"
 
 try {
     $script:_ptAdmin = ([Security.Principal.WindowsPrincipal]`
@@ -211,7 +211,7 @@ function pt {
                 return
             }
             & $binaryPath do ($Args[1..($Args.Count-1)] -join " ")
-            $actionFile = Join-Path $env:USERPROFILE ".powerterm_action.json"
+            $actionFile = Join-Path $env:USERPROFILE ".invoke_action.json"
             if (Test-Path $actionFile) {
                 $action = Get-Content $actionFile -Raw | ConvertFrom-Json
                 Remove-Item $actionFile -Force
@@ -387,7 +387,7 @@ function marks {
 }
 Register-ArgumentCompleter -CommandName j -ParameterName Name -ScriptBlock {
     param($cmd, $param, $word)
-    $f = Join-Path $env:USERPROFILE ".powerterm_marks.json"
+    $f = Join-Path $env:USERPROFILE ".invoke_marks.json"
     if (Test-Path $f) {
         (Get-Content $f -Raw | ConvertFrom-Json).PSObject.Properties.Name |
             Where-Object { $_ -like "$word*" } |
@@ -395,7 +395,7 @@ Register-ArgumentCompleter -CommandName j -ParameterName Name -ScriptBlock {
     }
 }
 
-$script:_ptZFile      = Join-Path $env:USERPROFILE ".powerterm_z.json"
+$script:_ptZFile      = Join-Path $env:USERPROFILE ".invoke_z.json"
 $global:_ptZ          = @{}
 $script:_ptZLastWrite = 0
 if (Test-Path $script:_ptZFile) {
@@ -448,7 +448,7 @@ function z {
 }
 Register-ArgumentCompleter -CommandName z -ScriptBlock {
     param($a, $b, $word)
-    $f = Join-Path $env:USERPROFILE ".powerterm_z.json"
+    $f = Join-Path $env:USERPROFILE ".invoke_z.json"
     if (Test-Path $f) {
         try {
             (Get-Content $f -Raw | ConvertFrom-Json).PSObject.Properties.Name |

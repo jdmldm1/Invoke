@@ -237,7 +237,7 @@ func executeAIDo(query string) {
 
 	home, err := os.UserHomeDir()
 	if err == nil {
-		actionPath := filepath.Join(home, ".powerterm_action.json")
+		actionPath := filepath.Join(home, ".invoke_action.json")
 		actionData := map[string]string{
 			"cmd":     cmdText,
 			"confirm": "true",

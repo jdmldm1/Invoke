@@ -484,10 +484,14 @@ func serveTerminalWindow() {
 	if networkAccessEnabled {
 		host = "0.0.0.0"
 	}
-	addr := host + ":0"
-	if p := os.Getenv("INVOKE_TERM_PORT"); p != "" {
-		addr = host + ":" + p
+	portStr := "0"
+	if startConfig.ServerPort > 0 {
+		portStr = fmt.Sprintf("%d", startConfig.ServerPort)
 	}
+	if p := os.Getenv("INVOKE_TERM_PORT"); p != "" {
+		portStr = p
+	}
+	addr := host + ":" + portStr
 	listener, err := net.Listen("tcp", addr)
 	if err != nil {
 		fmt.Printf("Error starting terminal server: %v\n", err)
@@ -713,7 +717,7 @@ func handleRunScript(w http.ResponseWriter, r *http.Request) {
 	dir := filepath.Join(userHome, ".gemini", "antigravity")
 	_ = os.MkdirAll(dir, 0755)
 
-	filePath := filepath.Join(dir, "powerterm_run.ps1")
+	filePath := filepath.Join(dir, "invoke_run.ps1")
 	err = os.WriteFile(filePath, []byte(req.Code), 0644)
 	if err != nil {
 		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
@@ -804,9 +808,14 @@ func handleScratchpadPath(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		home = "."
 	}
-	path := filepath.Join(home, ".powerterm_scratchpad.txt")
+	path := filepath.Join(home, ".invoke_scratchpad.txt")
+	oldPath := filepath.Join(home, ".powerterm_scratchpad.txt")
 	if _, err := os.Stat(path); os.IsNotExist(err) {
-		_ = os.WriteFile(path, []byte(""), 0644)
+		if _, errOld := os.Stat(oldPath); errOld == nil {
+			_ = os.Rename(oldPath, path)
+		} else {
+			_ = os.WriteFile(path, []byte(""), 0644)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(map[string]string{"path": path})
@@ -862,7 +871,14 @@ func getAppStatePath() string {
 	if err != nil {
 		home = "."
 	}
-	return filepath.Join(home, ".powerterm_state.json")
+	newPath := filepath.Join(home, ".invoke_state.json")
+	oldPath := filepath.Join(home, ".powerterm_state.json")
+	if _, err := os.Stat(newPath); os.IsNotExist(err) {
+		if _, errOld := os.Stat(oldPath); errOld == nil {
+			_ = os.Rename(oldPath, newPath)
+		}
+	}
+	return newPath
 }
 
 func readAppState() AppState {

@@ -9,7 +9,7 @@
 <script src="/web/xterm-addon-fit.min.js"></script>
 <style>
   :root{--bg:#000000;--panel:#050505;--panel2:#0d0d0d;--border:#141414;--border2:#222222;
-    --text:#e2e2e2;--muted:#666666;--accent:#a855f7;--good:#34d399;--bad:#f87171;--ink:#000000;
+    --text:#e2e2e2;--muted:#666666;--accent:#a855f7;--blue:#38bdf8;--good:#34d399;--bad:#f87171;--ink:#000000;
     --title-bg:#000000;--title-border:#141414}
   *{box-sizing:border-box}
   html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:'Segoe UI',sans-serif;overflow:hidden}
@@ -91,7 +91,7 @@
   #footer{flex:0 0 26px;display:flex;align-items:center;gap:0;background:var(--panel);
     border-top:1px solid var(--border);padding:0 6px;font-size:12px;color:var(--muted)}
   #footer .seg{display:flex;align-items:center;gap:6px;padding:0 9px;height:100%;white-space:nowrap}
-  #footer .seg.b{color:var(--accent);font-weight:600}
+  #footer .seg.b{color:var(--blue);font-weight:600}
   #footer .seg.warn{color:var(--ink);background:var(--warn);font-weight:700;border-radius:4px;height:18px}
   #footer .seg .lbl{color:var(--muted)}
   #footer #fCwd{max-width:380px;overflow:hidden;text-overflow:ellipsis}
@@ -283,21 +283,131 @@
     }).catch(function(){});
   }
 
+  function copyTextToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    return new Promise(function(resolve, reject) {
+      try {
+        const textArea = document.createElement('textarea');
+        textArea.value = text;
+        textArea.style.top = '0';
+        textArea.style.left = '0';
+        textArea.style.position = 'fixed';
+        textArea.style.opacity = '0';
+        document.body.appendChild(textArea);
+        textArea.focus();
+        textArea.select();
+        const successful = document.execCommand('copy');
+        document.body.removeChild(textArea);
+        if (successful) { resolve(); } else { reject(new Error('copy failed')); }
+      } catch (err) {
+        reject(err);
+      }
+    });
+  }
+
+  function showNetworkAccessModal(status, onToggleOff, onJustEnabled) {
+    const overlay = document.createElement('div');
+    overlay.className = 'snippet-modal-overlay';
+    const modal = document.createElement('div');
+    modal.className = 'snippet-modal';
+    modal.style.width = '480px';
+    
+    const titleText = status.enabled ? '🌐 Remote Network Access is ON' : '🌐 Remote Network Access';
+    let contentHtml = '<h3 style="margin-top:0;display:flex;align-items:center;gap:8px">' + titleText + '</h3>';
+    
+    const urlsArray = (status.addresses||[]).map(function(a){ return 'http://'+a+':'+status.port; });
+    const urlsText = urlsArray.join('\n') || '(no LAN address found)';
+    
+    contentHtml += '<p style="font-size:13px;color:var(--text);margin-bottom:12px;line-height:1.5">';
+    if (onJustEnabled) {
+      contentHtml += 'Remote network access has been successfully enabled.';
+    } else {
+      contentHtml += 'Reachable from other devices on your network at the following URLs:';
+    }
+    contentHtml += '</p>';
+    
+    contentHtml += '<div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px;background:var(--bg);border:1px solid var(--border2);border-radius:6px;padding:10px;max-height:200px;overflow-y:auto">';
+    if (urlsArray.length === 0) {
+      contentHtml += '<div style="font-size:12px;color:var(--muted);font-style:italic;padding:4px 0">(no LAN address found)</div>';
+    } else {
+      urlsArray.forEach(function(url, idx) {
+        contentHtml += '<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px;border-bottom:1px solid var(--panel2)">';
+        contentHtml += '<code style="font-family:\'Cascadia Code\',monospace;font-size:11.5px;color:var(--text);flex-grow:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(url) + '</code>';
+        contentHtml += '<button class="url-copy-btn" data-url="' + esc(url) + '" style="background:var(--panel2);color:var(--text);border:1px solid var(--border2);border-radius:4px;padding:3px 8px;font-size:11px;cursor:pointer;white-space:nowrap">📋 Copy</button>';
+        contentHtml += '</div>';
+      });
+    }
+    contentHtml += '</div>';
+    
+    contentHtml += '<div class="modal-btns" style="display:flex;justify-content:flex-end;gap:8px;margin-top:12px">';
+    contentHtml += '<button class="modal-btn" id="network-copy-all" style="background:var(--panel2);color:var(--text);border:1px solid var(--border2);border-radius:4px;padding:6px 12px;cursor:pointer">📋 Copy All</button>';
+    if (status.enabled && !onJustEnabled) {
+      contentHtml += '<button class="modal-btn" id="network-disable" style="background:#ef4444;color:#fff;border:none;border-radius:4px;padding:6px 12px;cursor:pointer">Turn OFF</button>';
+    }
+    contentHtml += '<button class="modal-btn cancel" id="network-close" style="background:#444;color:#ccc;border:none;border-radius:4px;padding:6px 12px;cursor:pointer">Close</button>';
+    contentHtml += '</div>';
+    
+    modal.innerHTML = contentHtml;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+    
+    // Bind click handlers to individual copy buttons
+    const copyBtns = modal.querySelectorAll('.url-copy-btn');
+    copyBtns.forEach(function(btn) {
+      btn.onclick = function() {
+        const urlToCopy = btn.getAttribute('data-url');
+        copyTextToClipboard(urlToCopy).then(function() {
+          const origText = btn.textContent;
+          btn.textContent = '✅ Copied!';
+          setTimeout(function() { btn.textContent = origText; }, 2000);
+        }).catch(function() {
+          alert('Failed to copy to clipboard.');
+        });
+      };
+    });
+    
+    const copyAllBtn = document.getElementById('network-copy-all');
+    const closeBtn = document.getElementById('network-close');
+    const disableBtn = document.getElementById('network-disable');
+    
+    copyAllBtn.onclick = function() {
+      copyTextToClipboard(urlsText).then(function() {
+        const origText = copyAllBtn.textContent;
+        copyAllBtn.textContent = '✅ Copied All!';
+        setTimeout(function() { copyAllBtn.textContent = origText; }, 2000);
+      }).catch(function() {
+        alert('Failed to copy to clipboard.');
+      });
+    };
+    
+    closeBtn.onclick = function() { overlay.remove(); };
+    overlay.onclick = function(e) { if (e.target === overlay) overlay.remove(); };
+    
+    if (disableBtn) {
+      disableBtn.onclick = function() {
+        overlay.remove();
+        onToggleOff();
+      };
+    }
+  }
+
   function configureNetworkAccess() {
     fetch('/network-access').then(function(r){ return r.json(); }).then(function(status){
       if (status.enabled) {
-        const urls = (status.addresses||[]).map(function(a){ return 'http://'+a+':'+status.port; }).join('\n') || '(no LAN address found)';
-        if (!confirm('Remote network access is ON. Reachable from other devices on your network at:\n\n' + urls + '\n\nTurn it OFF?')) return;
-        fetch('/network-access', {
-          method: 'POST', headers: {'Content-Type':'application/json'},
-          body: JSON.stringify({enabled:false})
-        }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
-          .then(function(res){
-            if (!res.ok) { alert('Failed: ' + (res.d.error||'unknown error')); return; }
-            networkAccessOn = false;
-            updateFooter();
-            alert('Remote network access disabled.');
-          });
+        showNetworkAccessModal(status, function() {
+          fetch('/network-access', {
+            method: 'POST', headers: {'Content-Type':'application/json'},
+            body: JSON.stringify({enabled:false})
+          }).then(function(r){ return r.json().then(function(d){ return {ok:r.ok, d:d}; }); })
+            .then(function(res){
+              if (!res.ok) { alert('Failed: ' + (res.d.error||'unknown error')); return; }
+              networkAccessOn = false;
+              updateFooter();
+              alert('Remote network access disabled.');
+            });
+        }, false);
         return;
       }
 
@@ -314,8 +424,11 @@
           if (!res.ok) { alert('Failed: ' + (res.d.error||'unknown error')); return; }
           networkAccessOn = true;
           updateFooter();
-          const urls = (res.d.addresses||[]).map(function(a){ return 'http://'+a+':'+res.d.port; }).join('\n') || '(no LAN address found — check your network connection)';
-          alert('Remote network access enabled.\n\nOpen from another device on your network:\n\n' + urls);
+          showNetworkAccessModal({
+            enabled: true,
+            port: res.d.port,
+            addresses: res.d.addresses
+          }, null, true);
         });
     });
   }
@@ -564,8 +677,7 @@
             newTab(s.name, s.cwd, s.scratchpad_open, s.chat_open);
           });
         } else {
-          const name = prompt('No active sessions found. Please enter a name to create a new session:', 'Session 1');
-          newTab(name && name.trim() ? name.trim() : 'Session 1');
+          newTab('Session 1');
         }
         
         const recents = st.recent_sessions || [];
@@ -2888,8 +3000,7 @@
     tab.root.remove(); tab.tabEl.remove();
     tabs=tabs.filter(t=>t!==tab);
     if(tabs.length===0){
-      const name = prompt('All sessions closed. Please enter a name to create a new session:', 'Session 1');
-      newTab(name && name.trim() ? name.trim() : 'Session 1');
+      newTab('Session 1');
       return;
     }
     if(activeTab===tab) selectTab(tabs[Math.max(0,tabs.length-1)]);

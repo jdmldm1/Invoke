@@ -34,7 +34,7 @@ type FSNode struct {
 
 func sshMachineKey() []byte {
 	hostname, _ := os.Hostname()
-	salt := "powerterm-ssh-v1:" + hostname
+	salt := "invoke-ssh-v1:" + hostname
 	sum := sha256.Sum256([]byte(salt))
 	return sum[:]
 }

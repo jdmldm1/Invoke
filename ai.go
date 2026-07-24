@@ -1129,7 +1129,7 @@ func handleAutoconfigureAI(w http.ResponseWriter, r *http.Request) {
 	config.OllamaHost = "http://localhost:11434"
 	config.OllamaModel = "phi4-mini"
 	userHome, _ := os.UserHomeDir()
-	configPath := filepath.Join(userHome, ".powerterm.json")
+	configPath := filepath.Join(userHome, ".invoke.json")
 	if data, err := json.MarshalIndent(config, "", "  "); err == nil {
 		_ = os.WriteFile(configPath, data, 0644)
 	}

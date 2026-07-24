@@ -36,6 +36,7 @@ type ConfigData struct {
 	NetworkAccess       bool   `json:"network_access"`
 	NetworkPasswordHash string `json:"network_password_hash"`
 	NetworkPasswordSalt string `json:"network_password_salt"`
+	ServerPort          int    `json:"server_port"`
 }
 
 type LayoutPane struct {
@@ -67,7 +68,15 @@ func initConfig() {
 	if err != nil {
 		home = "."
 	}
-	configPath = filepath.Join(home, ".powerterm.json")
+	configPath = filepath.Join(home, ".invoke.json")
+
+	// Migrate old config if it exists
+	oldConfig := filepath.Join(home, ".powerterm.json")
+	if _, err := os.Stat(configPath); os.IsNotExist(err) {
+		if _, errOld := os.Stat(oldConfig); errOld == nil {
+			_ = os.Rename(oldConfig, configPath)
+		}
+	}
 }
 
 func initLayouts() {
@@ -75,7 +84,15 @@ func initLayouts() {
 	if err != nil {
 		home = "."
 	}
-	layoutPath = filepath.Join(home, ".powerterm_layouts.json")
+	layoutPath = filepath.Join(home, ".invoke_layouts.json")
+
+	// Migrate old layouts if they exist
+	oldLayouts := filepath.Join(home, ".powerterm_layouts.json")
+	if _, err := os.Stat(layoutPath); os.IsNotExist(err) {
+		if _, errOld := os.Stat(oldLayouts); errOld == nil {
+			_ = os.Rename(oldLayouts, layoutPath)
+		}
+	}
 }
 
 func loadConfig() ConfigData {
@@ -215,6 +232,9 @@ func loadConfig() ConfigData {
 		}
 		if s, ok := raw["network_password_salt"].(string); ok {
 			data.NetworkPasswordSalt = s
+		}
+		if sp, ok := raw["server_port"].(float64); ok {
+			data.ServerPort = int(sp)
 		}
 
 		if epRaw, ok := raw["ssh_endpoints"].([]any); ok {

@@ -9,7 +9,7 @@ $ProjectRoot = $PSScriptRoot
 $BuildDir = Join-Path $ProjectRoot "build"
 $InstallerDir = Join-Path $ProjectRoot "installer"
 
-Write-Host "PowerTerm Build Script" -ForegroundColor Cyan
+Write-Host "Invoke Build Script" -ForegroundColor Cyan
 Write-Host "======================" -ForegroundColor Cyan
 Write-Host ""
 
@@ -39,7 +39,7 @@ try {
     Pop-Location
 }
 
-Write-Host "Building invoke-server.exe (powerterm)..." -ForegroundColor Yellow
+Write-Host "Building invoke-server.exe (invoke)..." -ForegroundColor Yellow
 Push-Location $ProjectRoot
 try {
     go build -ldflags "-H windowsgui" -o (Join-Path $BuildDir "invoke-server.exe") .
