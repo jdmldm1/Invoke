@@ -209,6 +209,9 @@
     <div id="tabs"></div>
     <div id="newtab" title="New session (Ctrl+Shift+T)">+</div>
     <div id="toolbar">
+      <div class="tbtn" id="btnBrowse" title="Folder Browser">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path></svg>Browse
+      </div>
       <div class="tbtn" id="btnSplitV" title="Split right (Ctrl+Shift+D)">
         <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="12" y1="3" x2="12" y2="21"/></svg>Split
       </div>
@@ -275,12 +278,46 @@
   let opacityLevel = 90;
   let appAliases = {};
   let networkAccessOn = false;
+  let keepAliveOn = false;
 
   function refreshNetworkStatus() {
     fetch('/network-access').then(function(r){ return r.json(); }).then(function(status){
       networkAccessOn = !!status.enabled;
       updateFooter();
     }).catch(function(){});
+  }
+
+  function refreshKeepAliveStatus() {
+    fetch('/config')
+      .then(r => r.json())
+      .then(cfg => {
+        keepAliveOn = !!cfg.keep_alive;
+      })
+      .catch(() => {});
+  }
+
+  function toggleKeepAlive() {
+    fetch('/config')
+      .then(r => r.json())
+      .then(cfg => {
+        cfg.keep_alive = !keepAliveOn;
+        return fetch('/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cfg)
+        });
+      })
+      .then(r => {
+        if (r.ok) {
+          keepAliveOn = !keepAliveOn;
+          alert('System tray mode ' + (keepAliveOn ? 'enabled. The app will continue running in the system tray when closed.' : 'disabled.'));
+        } else {
+          alert('Failed to update system tray mode settings.');
+        }
+      })
+      .catch(() => {
+        alert('Error connecting to server.');
+      });
   }
 
   function copyTextToClipboard(text) {
@@ -353,7 +390,7 @@
     overlay.appendChild(modal);
     document.body.appendChild(overlay);
     
-    // Bind click handlers to individual copy buttons
+    
     const copyBtns = modal.querySelectorAll('.url-copy-btn');
     copyBtns.forEach(function(btn) {
       btn.onclick = function() {
@@ -2083,7 +2120,7 @@
       suggestions.push(...getCommonFlags(cleanLine));
     }
 
-    // General path / file autocomplete (Feature 7)
+    
     const words = cleanLine.split(/\s+/);
     const lastWord = cleanLine.endsWith(' ') ? '' : words[words.length - 1];
     const isPathLike = lastWord.startsWith('.') || lastWord.includes('/') || lastWord.includes('\\');
@@ -2802,8 +2839,11 @@
         {sep:true},
         {label:'Quick Connect...', action:function(){openSSHQuickConnect();}},
       ]},
+      {label:'Folder Browser', action:function(){openBrowserTab();}},
+      {sep:true},
       {label:'SCP Transfer', action:function(){openSCPTab();}},
       {label:'Remote Network Access...', action:function(){configureNetworkAccess();}, checked:function(){return networkAccessOn;}},
+      {label:'Run in Background (System Tray)', action:function(){toggleKeepAlive();}, checked:function(){return keepAliveOn;}},
       {label:'Intelligent CLI Helper...', action:function(){openCLIHelperPromptModal();}},
       {label:'Git Operations', submenu:[
         {label:'Status', action:function(){sendToActive('git status -sb');}},
@@ -4091,6 +4131,26 @@
     updateFooter();
   }
 
+  function openBrowserTab(initialCwd) {
+    let dir = initialCwd;
+    if (!dir && activePane) {
+      dir = activePane.cwd;
+    }
+    const tab={id:++tabSeq, type:'view', viewType:'browser', name:'Folder Browser',
+      panes:new Set(), root:document.createElement('div'), tabEl:null};
+    tab.root.className='layout';
+    const frame=document.createElement('iframe');
+    frame.style.cssText='border:0;flex:1 1 auto;width:100%;height:100%;background:#000';
+    frame.setAttribute('allow', 'clipboard-write; clipboard-read');
+    frame.src='/web/browser.html?dir=' + encodeURIComponent(dir || '');
+    tab.root.appendChild(frame);
+    workspace.appendChild(tab.root);
+    buildTabButton(tab, '📁 '+tab.name);
+    tabs.push(tab);
+    selectTab(tab);
+    updateFooter();
+  }
+
   const refreshEl = document.getElementById('sb-refresh');
   if (refreshEl) refreshEl.onclick = () => refreshSidebar();
   const scaffoldEl = document.getElementById('sb-scaffold');
@@ -4098,6 +4158,18 @@
 
   const segNetworkEl = document.getElementById('segNetwork');
   if (segNetworkEl) segNetworkEl.addEventListener('click', configureNetworkAccess);
+
+  const btnBrowseEl = document.getElementById('btnBrowse');
+  if (btnBrowseEl) btnBrowseEl.addEventListener('click', () => openBrowserTab());
+
+  window.addEventListener('message', function(e) {
+    if (!e.data) return;
+    if (e.data.type === 'browser-open-terminal' && e.data.dir) {
+      newTab(null, e.data.dir);
+    } else if (e.data.type === 'browser-open-file' && e.data.file) {
+      openViewTab({ type: 'edit', file: e.data.file, name: e.data.file.split(/[\\/]/).pop() });
+    }
+  });
 
   buildMenus();
   connectControl();
@@ -4107,6 +4179,7 @@
   refreshSidebar();
   loadSessionsState();
   refreshNetworkStatus();
+  refreshKeepAliveStatus();
   updateFooter();
 })();
 </script>

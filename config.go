@@ -37,6 +37,7 @@ type ConfigData struct {
 	NetworkPasswordHash string `json:"network_password_hash"`
 	NetworkPasswordSalt string `json:"network_password_salt"`
 	ServerPort          int    `json:"server_port"`
+	KeepAlive           bool   `json:"keep_alive"`
 }
 
 type LayoutPane struct {
@@ -70,7 +71,6 @@ func initConfig() {
 	}
 	configPath = filepath.Join(home, ".invoke.json")
 
-	// Migrate old config if it exists
 	oldConfig := filepath.Join(home, ".powerterm.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		if _, errOld := os.Stat(oldConfig); errOld == nil {
@@ -86,7 +86,6 @@ func initLayouts() {
 	}
 	layoutPath = filepath.Join(home, ".invoke_layouts.json")
 
-	// Migrate old layouts if they exist
 	oldLayouts := filepath.Join(home, ".powerterm_layouts.json")
 	if _, err := os.Stat(layoutPath); os.IsNotExist(err) {
 		if _, errOld := os.Stat(oldLayouts); errOld == nil {
@@ -235,6 +234,9 @@ func loadConfig() ConfigData {
 		}
 		if sp, ok := raw["server_port"].(float64); ok {
 			data.ServerPort = int(sp)
+		}
+		if ka, ok := raw["keep_alive"].(bool); ok {
+			data.KeepAlive = ka
 		}
 
 		if epRaw, ok := raw["ssh_endpoints"].([]any); ok {

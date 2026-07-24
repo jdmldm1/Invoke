@@ -25,6 +25,8 @@ import (
 //go:embed splash.html
 var splashHTML string
 
+var serverCmd *exec.Cmd
+
 type startResult struct {
 	cmd *exec.Cmd
 	err error
@@ -82,7 +84,8 @@ func main() {
 	defer runtime.UnlockOSThread()
 
 	w := webview2.NewWithOptions(webview2.WebViewOptions{
-		Debug: false,
+		Debug:    false,
+		DataPath: filepath.Join(os.TempDir(), "invoke-app-webview-data"),
 		WindowOptions: webview2.WindowOptions{
 			Title:  "Invoke",
 			Width:  1280,
@@ -107,6 +110,7 @@ func main() {
 
 	setAppUserModelID("Invoke.Terminal.App")
 	w.SetHtml(splashHTML)
+	setupSystemTray(w)
 
 	resultCh := make(chan startResult, 1)
 	go func() {
@@ -135,6 +139,7 @@ func main() {
 			w.Dispatch(func() { w.SetHtml(errorPageHTML(res.err.Error())) })
 			return
 		}
+		serverCmd = res.cmd
 		w.Dispatch(func() { w.Eval("document.getElementById('app-frame').src=" + strconv.Quote(url) + ";") })
 		<-done
 		res.cmd.Process.Kill()
@@ -142,6 +147,7 @@ func main() {
 
 	w.Run()
 	close(done)
+	removeTrayIcon()
 }
 
 func waitForServer(url string) bool {

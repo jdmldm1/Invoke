@@ -568,11 +568,14 @@ func serveTerminalWindow() {
 	mux.HandleFunc("/remote-login", handleRemoteLogin)
 	mux.HandleFunc("/ai-cli-schema", handleAICLISchema)
 
-
 	go func() {
 		zero := 0
 		for {
 			time.Sleep(2 * time.Second)
+			config := loadConfig()
+			if config.KeepAlive {
+				continue
+			}
 			connMu.Lock()
 			ended := everConnected && activeConns <= 0
 			connMu.Unlock()

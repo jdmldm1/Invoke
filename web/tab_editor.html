@@ -62,7 +62,7 @@
      ed.focus();
    }
 
-   // 4. Comment-to-Code Generator (Ctrl+Space on a comment line)
+   
    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Space, function() {
      const position = ed.getPosition();
      const lineText = ed.getModel().getLineContent(position.lineNumber);
@@ -93,7 +93,7 @@
                text: d.code,
                forceMoveMarkers: true
              }]);
-             // Save the file automatically after AI generation
+             
              setTimeout(() => {
                fetch('/file-save',{method:'POST',headers:{'Content-Type':'application/json'},
                  body:JSON.stringify({file:abs,content:ed.getValue()})})
@@ -109,11 +109,11 @@
        }
      }
      
-     // Fallback to default suggestions trigger
+     
      ed.trigger('keyboard', 'editor.action.triggerSuggest', {});
    });
 
-   // 1. Monaco Editor Inline AI Copilot (Ctrl+Alt+A)
+   
    ed.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyMod.Alt | monaco.KeyCode.KeyA, function() {
      const selection = ed.getSelection();
      if (selection.isEmpty()) {
@@ -171,7 +171,7 @@
            text: d.code,
            forceMoveMarkers: true
          }]);
-         // Save the file automatically after AI edit
+         
          setTimeout(() => {
            fetch('/file-save',{method:'POST',headers:{'Content-Type':'application/json'},
              body:JSON.stringify({file:abs,content:ed.getValue()})})
@@ -192,7 +192,7 @@
      if (e.key === 'Escape') { document.getElementById('ai-widget').style.display = 'none'; ed.focus(); }
    };
 
-   // 3. Smart Code Snippets Autocomplete
+   
    fetch('/config')
      .then(r => r.json())
      .then(cfg => {

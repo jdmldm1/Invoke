@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Folder Browser</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #070709;
+      --panel: #111115;
+      --panel2: #181822;
+      --border: rgba(255, 255, 255, 0.06);
+      --border2: rgba(255, 255, 255, 0.12);
+      --text: #f1f5f9;
+      --muted: #94a3b8;
+      --accent: #c084fc;       
+      --accent-glow: rgba(192, 132, 252, 0.15);
+      --terminal-accent: #38bdf8; 
+      --terminal-glow: rgba(56, 189, 248, 0.2);
+      --success: #34d399;
+      --danger: #f87171;
+      --card-bg: rgba(20, 20, 28, 0.6);
+      --hover-bg: rgba(255, 255, 255, 0.03);
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      background-color: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 13px;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+      background-color: var(--panel);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      gap: 16px;
+    }
+    .nav-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .btn {
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+      user-select: none;
+    }
+    .btn:hover {
+      background: var(--hover-bg);
+      border-color: var(--muted);
+      transform: translateY(-1px);
+    }
+    .btn:active {
+      transform: translateY(0);
+    }
+    .btn-terminal {
+      background: var(--terminal-glow);
+      border-color: rgba(56, 189, 248, 0.3);
+      color: var(--terminal-accent);
+      font-weight: 600;
+    }
+    .btn-terminal:hover {
+      background: var(--terminal-accent);
+      color: #000;
+      box-shadow: 0 0 12px var(--terminal-glow);
+    }
+    .breadcrumbs {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex: 1;
+      overflow-x: auto;
+      white-space: nowrap;
+      padding: 4px 0;
+    }
+    .breadcrumbs::-webkit-scrollbar {
+      height: 3px;
+    }
+    .breadcrumbs::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 2px;
+    }
+    .breadcrumb-item {
+      color: var(--muted);
+      cursor: pointer;
+      padding: 2px 6px;
+      border-radius: 4px;
+      transition: all 0.15s ease;
+    }
+    .breadcrumb-item:hover {
+      color: var(--text);
+      background: var(--hover-bg);
+    }
+    .breadcrumb-separator {
+      color: rgba(255, 255, 255, 0.15);
+      user-select: none;
+    }
+    .search-box {
+      position: relative;
+      width: 240px;
+    }
+    .search-box input {
+      width: 100%;
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 6px 12px 6px 32px;
+      border-radius: 6px;
+      outline: none;
+      transition: all 0.2s ease;
+    }
+    .search-box input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 8px var(--accent-glow);
+    }
+    .search-icon {
+      position: absolute;
+      left: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      color: var(--muted);
+      pointer-events: none;
+    }
+    .view-toggles {
+      display: flex;
+      gap: 2px;
+      background: var(--panel2);
+      border: 1px solid var(--border);
+      padding: 2px;
+      border-radius: 6px;
+    }
+    .view-toggle {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      padding: 4px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+    }
+    .view-toggle.active {
+      color: var(--text);
+      background: var(--hover-bg);
+    }
+    #main-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+    }
+    
+    .grid-view {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      cursor: pointer;
+      position: relative;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      user-select: none;
+    }
+    .card:hover {
+      transform: translateY(-2px);
+      background: var(--panel2);
+      border-color: var(--item-accent);
+      box-shadow: 0 8px 24px var(--item-glow);
+    }
+    .card.dir {
+      --item-accent: var(--accent);
+      --item-glow: var(--accent-glow);
+    }
+    .card.file {
+      --item-accent: var(--terminal-accent);
+      --item-glow: var(--terminal-glow);
+    }
+    .card .icon {
+      font-size: 36px;
+      margin-bottom: 12px;
+      transition: transform 0.2s ease;
+    }
+    .card:hover .icon {
+      transform: scale(1.1);
+    }
+    .card .name {
+      font-weight: 500;
+      color: var(--text);
+      width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+    .card .actions {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      display: flex;
+      gap: 4px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .card:hover .actions {
+      opacity: 1;
+    }
+    .action-btn {
+      background: rgba(0, 0, 0, 0.6);
+      border: 1px solid var(--border);
+      color: var(--text);
+      width: 24px;
+      height: 24px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.15s ease;
+    }
+    .action-btn:hover {
+      background: var(--item-accent);
+      color: #000;
+      border-color: var(--item-accent);
+    }
+
+    
+    .list-view {
+      width: 100%;
+      border-collapse: collapse;
+      text-align: left;
+    }
+    .list-view th {
+      color: var(--muted);
+      font-weight: 600;
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+      text-transform: uppercase;
+      font-size: 11px;
+      letter-spacing: 0.5px;
+    }
+    .list-view tr {
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.15s ease;
+    }
+    .list-view tr:hover {
+      background: var(--hover-bg);
+    }
+    .list-view td {
+      padding: 10px 12px;
+      vertical-align: middle;
+    }
+    .list-view .item-name {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 500;
+    }
+    .list-view .icon {
+      font-size: 18px;
+    }
+    .list-view .actions {
+      display: flex;
+      gap: 6px;
+      justify-content: flex-end;
+    }
+
+    
+    #main-content::-webkit-scrollbar {
+      width: 8px;
+      height: 8px;
+    }
+    #main-content::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    #main-content::-webkit-scrollbar-thumb {
+      background: var(--border2);
+      border-radius: 4px;
+    }
+    #main-content::-webkit-scrollbar-thumb:hover {
+      background: var(--muted);
+    }
+
+    .no-items {
+      color: var(--muted);
+      text-align: center;
+      padding: 40px;
+      font-style: italic;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="nav-controls">
+      <button class="btn" id="btnBack" title="Back to parent">↑ Up</button>
+      <button class="btn btn-terminal" id="btnOpenTerm" title="Open terminal in current directory">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+        Terminal Here
+      </button>
+    </div>
+    <div class="breadcrumbs" id="breadcrumbs"></div>
+    <div class="search-box">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="search-input" placeholder="Search in directory...">
+    </div>
+    <div class="view-toggles">
+      <button class="view-toggle active" id="view-grid" title="Grid View">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+      </button>
+      <button class="view-toggle" id="view-list" title="List View">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="main-content">
+    <div id="file-container" class="grid-view"></div>
+  </div>
+
+  <div id="diagnostics-panel" style="background:#111116;border-top:1px solid var(--border);padding:8px 16px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);flex-shrink:0;max-height:150px;overflow-y:auto;display:block;">
+    <div style="font-weight:bold;color:var(--text);margin-bottom:4px;display:flex;justify-content:space-between;">
+      <span>🔍 Browser Diagnostics Log</span>
+      <span id="btnToggleDiagnostics" style="cursor:pointer;color:var(--danger);">[Minimize]</span>
+    </div>
+    <div id="diagnostics-log" style="white-space:pre-wrap;line-height:1.4;">Initializing Folder Browser...</div>
+  </div>
+
+  <script>
+    let currentDir = '';
+    let parentDir = '';
+    let items = [];
+    let viewMode = 'grid'; 
+    let diagnosticsMinimized = false;
+
+    
+    function logDiagnostic(msg) {
+      const logEl = document.getElementById('diagnostics-log');
+      if (logEl) {
+        logEl.textContent += '\n[' + new Date().toLocaleTimeString() + '] ' + msg;
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      console.log(msg);
+    }
+
+    
+    window.onerror = function(msg, url, line) {
+      logDiagnostic('JS Error: ' + msg + ' at line ' + line + ' in ' + url);
+      return false;
+    };
+
+    
+    document.getElementById('btnToggleDiagnostics').onclick = () => {
+      diagnosticsMinimized = !diagnosticsMinimized;
+      const panel = document.getElementById('diagnostics-panel');
+      const logEl = document.getElementById('diagnostics-log');
+      if (diagnosticsMinimized) {
+        panel.style.height = '30px';
+        logEl.style.display = 'none';
+        document.getElementById('btnToggleDiagnostics').textContent = '[Expand]';
+        document.getElementById('btnToggleDiagnostics').style.color = 'var(--success)';
+      } else {
+        panel.style.height = 'auto';
+        panel.style.maxHeight = '150px';
+        logEl.style.display = 'block';
+        document.getElementById('btnToggleDiagnostics').textContent = '[Minimize]';
+        document.getElementById('btnToggleDiagnostics').style.color = 'var(--danger)';
+      }
+    };
+
+    
+    const params = new URLSearchParams(window.location.search);
+    let startDir = params.get('dir') || '';
+    if (startDir === 'undefined') startDir = '';
+
+    
+    try {
+      if (localStorage.getItem('browser_view_mode')) {
+        viewMode = localStorage.getItem('browser_view_mode');
+        document.getElementById('view-grid').classList.toggle('active', viewMode === 'grid');
+        document.getElementById('view-list').classList.toggle('active', viewMode === 'list');
+      }
+    } catch (e) {
+      logDiagnostic('localStorage read failed (expected in sandboxed contexts): ' + e.message);
+    }
+
+    function getFileIcon(name, isDir) {
+      if (isDir) return '📁';
+      const ext = name.split('.').pop().toLowerCase();
+      switch(ext) {
+        
+        case 'ps1': case 'bat': case 'cmd': case 'sh':
+          return '⚡';
+        
+        case 'go': case 'js': case 'ts': case 'html': case 'css': case 'json': case 'yaml': case 'yml': case 'xml': case 'md':
+          return '📄';
+        
+        case 'png': case 'jpg': case 'jpeg': case 'gif': case 'svg': case 'ico':
+          return '🖼️';
+        default:
+          return '📄';
+      }
+    }
+
+    
+    function getFileTypeString(name, isDir) {
+      if (isDir) return 'Folder';
+      const ext = name.split('.').pop().toUpperCase();
+      return ext ? ext + ' File' : 'File';
+    }
+
+    function getPathSeparator() {
+      return currentDir.includes('/') ? '/' : '\\';
+    }
+
+    function buildFullPath(name) {
+      const sep = getPathSeparator();
+      return currentDir.replace(/[\\/]$/, '') + sep + name;
+    }
+
+    function loadDir(dirPath) {
+      if (dirPath === 'undefined' || !dirPath) {
+        dirPath = '';
+      }
+      logDiagnostic('Fetching directory path: "' + dirPath + '"');
+      fetch('/fs?dir=' + encodeURIComponent(dirPath))
+        .then(r => {
+          logDiagnostic('Received response. Status: ' + r.status + ' ' + r.statusText);
+          if (!r.ok) {
+            throw new Error('HTTP ' + r.status + ': ' + r.statusText);
+          }
+          return r.json();
+        })
+        .then(data => {
+          logDiagnostic('Parsed JSON. dir="' + data.dir + '", parent="' + data.parent + '", entriesCount=' + (data.entries ? data.entries.length : 0));
+          currentDir = data.dir || '';
+          parentDir = data.parent || '';
+          items = data.entries || [];
+
+          
+          const url = new URL(window.location);
+          url.searchParams.set('dir', currentDir);
+          window.history.pushState({}, '', url);
+
+          renderBreadcrumbs();
+          renderItems();
+          logDiagnostic('Render completed successfully.');
+        })
+        .catch(err => {
+          logDiagnostic('Error loading directory: ' + err.message);
+          console.error("Failed to load directory:", err);
+          document.getElementById('file-container').innerHTML = `<div class="no-items" style="color:var(--danger)">Error loading directory: ${err.message}</div>`;
+        });
+    }
+
+    function renderBreadcrumbs() {
+      const breadcrumbsEl = document.getElementById('breadcrumbs');
+      breadcrumbsEl.innerHTML = '';
+      
+      const sep = getPathSeparator();
+      const parts = currentDir.split(/[\\/]/).filter(p => p);
+      
+      
+      const isWindows = currentDir.includes('\\') || (currentDir.length > 1 && currentDir[1] === ':');
+      let runningPath = '';
+      
+      parts.forEach((part, index) => {
+        if (index > 0) {
+          const sepSpan = document.createElement('span');
+          sepSpan.className = 'breadcrumb-separator';
+          sepSpan.textContent = '>';
+          breadcrumbsEl.appendChild(sepSpan);
+        }
+
+        if (index === 0) {
+          runningPath = isWindows ? part + sep : part;
+        } else {
+          runningPath = runningPath.replace(/[\\/]$/, '') + sep + part;
+        }
+
+        const itemSpan = document.createElement('span');
+        itemSpan.className = 'breadcrumb-item';
+        itemSpan.textContent = part;
+        const targetPath = runningPath;
+        itemSpan.onclick = () => loadDir(targetPath);
+        breadcrumbsEl.appendChild(itemSpan);
+      });
+      
+      
+      document.getElementById('btnBack').disabled = (currentDir === parentDir);
+    }
+
+    function renderItems() {
+      const filter = document.getElementById('search-input').value.toLowerCase();
+      const container = document.getElementById('file-container');
+      container.innerHTML = '';
+
+      const filteredItems = items.filter(item => item.name.toLowerCase().includes(filter));
+
+      if (filteredItems.length === 0) {
+        container.className = '';
+        container.innerHTML = '<div class="no-items">No folders or files found.</div>';
+        return;
+      }
+
+      if (viewMode === 'grid') {
+        container.className = 'grid-view';
+        filteredItems.forEach(item => {
+          const card = document.createElement('div');
+          card.className = `card ${item.dir ? 'dir' : 'file'}`;
+          
+          const icon = document.createElement('div');
+          icon.className = 'icon';
+          icon.textContent = getFileIcon(item.name, item.dir);
+          card.appendChild(icon);
+
+          const name = document.createElement('div');
+          name.className = 'name';
+          name.textContent = item.name;
+          name.title = item.name;
+          card.appendChild(name);
+
+          
+          const actions = document.createElement('div');
+          actions.className = 'actions';
+          
+          if (item.dir) {
+            const btnTerm = document.createElement('button');
+            btnTerm.className = 'action-btn';
+            btnTerm.title = 'Open Terminal Here';
+            btnTerm.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
+            btnTerm.onclick = (e) => {
+              e.stopPropagation();
+              openTerminal(buildFullPath(item.name));
+            };
+            actions.appendChild(btnTerm);
+          } else {
+            const btnEdit = document.createElement('button');
+            btnEdit.className = 'action-btn';
+            btnEdit.title = 'Open in Monaco Editor';
+            btnEdit.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"/></svg>';
+            btnEdit.onclick = (e) => {
+              e.stopPropagation();
+              openFile(buildFullPath(item.name));
+            };
+            actions.appendChild(btnEdit);
+          }
+          card.appendChild(actions);
+
+          
+          card.ondblclick = () => {
+            if (item.dir) {
+              loadDir(buildFullPath(item.name));
+            } else {
+              openFile(buildFullPath(item.name));
+            }
+          };
+
+          container.appendChild(card);
+        });
+      } else {
+        container.className = '';
+        const table = document.createElement('table');
+        table.className = 'list-view';
+        
+        const thead = document.createElement('thead');
+        thead.innerHTML = `
+          <tr>
+            <th>Name</th>
+            <th style="width: 150px;">Type</th>
+            <th style="width: 100px; text-align: right;">Actions</th>
+          </tr>
+        `;
+        table.appendChild(thead);
+
+        const tbody = document.createElement('tbody');
+        filteredItems.forEach(item => {
+          const tr = document.createElement('tr');
+          
+          const tdName = document.createElement('td');
+          tdName.innerHTML = `
+            <div class="item-name" style="color: ${item.dir ? 'var(--accent)' : 'inherit'}">
+              <span class="icon">${getFileIcon(item.name, item.dir)}</span>
+              <span>${item.name}</span>
+            </div>
+          `;
+          tr.appendChild(tdName);
+
+          const tdType = document.createElement('td');
+          tdType.style.color = 'var(--muted)';
+          tdType.textContent = getFileTypeString(item.name, item.dir);
+          tr.appendChild(tdType);
+
+          const tdActions = document.createElement('td');
+          tdActions.className = 'actions';
+          
+          if (item.dir) {
+            const btnTerm = document.createElement('button');
+            btnTerm.className = 'action-btn';
+            btnTerm.style.setProperty('--item-accent', 'var(--accent)');
+            btnTerm.title = 'Open Terminal Here';
+            btnTerm.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>';
+            btnTerm.onclick = (e) => {
+              e.stopPropagation();
+              openTerminal(buildFullPath(item.name));
+            };
+            tdActions.appendChild(btnTerm);
+          } else {
+            const btnEdit = document.createElement('button');
+            btnEdit.className = 'action-btn';
+            btnEdit.style.setProperty('--item-accent', 'var(--terminal-accent)');
+            btnEdit.title = 'Open in Monaco Editor';
+            btnEdit.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"/></svg>';
+            btnEdit.onclick = (e) => {
+              e.stopPropagation();
+              openFile(buildFullPath(item.name));
+            };
+            tdActions.appendChild(btnEdit);
+          }
+          tr.appendChild(tdActions);
+
+          tr.ondblclick = () => {
+            if (item.dir) {
+              loadDir(buildFullPath(item.name));
+            } else {
+              openFile(buildFullPath(item.name));
+            }
+          };
+
+          tbody.appendChild(tr);
+        });
+        table.appendChild(tbody);
+        container.appendChild(table);
+      }
+    }
+
+    function openTerminal(dirPath) {
+      window.parent.postMessage({ type: 'browser-open-terminal', dir: dirPath }, '*');
+    }
+
+    
+    function openFile(filePath) {
+      window.parent.postMessage({ type: 'browser-open-file', file: filePath }, '*');
+    }
+
+    
+    document.getElementById('btnBack').onclick = () => {
+      if (parentDir) loadDir(parentDir);
+    };
+
+    document.getElementById('btnOpenTerm').onclick = () => {
+      openTerminal(currentDir);
+    };
+
+    document.getElementById('search-input').oninput = () => {
+      renderItems();
+    };
+
+    
+    document.getElementById('view-grid').onclick = () => {
+      viewMode = 'grid';
+      try {
+        localStorage.setItem('browser_view_mode', 'grid');
+      } catch (e) {}
+      document.getElementById('view-grid').classList.add('active');
+      document.getElementById('view-list').classList.remove('active');
+      renderItems();
+    };
+
+    document.getElementById('view-list').onclick = () => {
+      viewMode = 'list';
+      try {
+        localStorage.setItem('browser_view_mode', 'list');
+      } catch (e) {}
+      document.getElementById('view-grid').classList.remove('active');
+      document.getElementById('view-list').classList.add('active');
+      renderItems();
+    };
+
+    
+    loadDir(startDir);
+  </script>
+</body>
+</html>
