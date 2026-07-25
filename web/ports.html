@@ -123,12 +123,13 @@
                 <th>PID</th>
                 <th>Process Name</th>
                 <th>Status</th>
+                <th>Share (Tunnel)</th>
                 <th>Action</th>
             </tr>
         </thead>
         <tbody id="ports-body">
             <tr>
-                <td colspan="5" class="empty">Loading active ports...</td>
+                <td colspan="6" class="empty">Loading active ports...</td>
             </tr>
         </tbody>
     </table>
@@ -136,51 +137,136 @@
     <script>
         function loadPorts() {
             const tbody = document.getElementById('ports-body');
-            fetch('/ports')
-                .then(r => r.json())
-                .then(data => {
-                    tbody.innerHTML = '';
-                    let ports = [];
-                    if (data) {
-                        if (Array.isArray(data)) {
-                            ports = data;
-                        } else if (typeof data === 'object') {
-                            ports = [data];
-                        }
+            let sessionId = '';
+            try {
+                if (window.parent && window.parent.activePane) {
+                    sessionId = window.parent.activePane.sessionId;
+                }
+            } catch(e) {}
+
+            Promise.all([
+                fetch('/ports').then(r => r.json()),
+                fetch('/tunnel/status').then(r => r.json()).catch(() => [])
+            ])
+            .then(([portsData, tunnels]) => {
+                tbody.innerHTML = '';
+                let ports = [];
+                if (portsData) {
+                    if (Array.isArray(portsData)) {
+                        ports = portsData;
+                    } else if (typeof portsData === 'object') {
+                        ports = [portsData];
                     }
-                    if (ports.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="5" class="empty">No active listening ports found.</td></tr>';
-                        return;
+                }
+                if (ports.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="6" class="empty">No active listening ports found.</td></tr>';
+                    return;
+                }
+                ports.sort((a, b) => a.Port - b.Port);
+                ports.forEach(p => {
+                    const tr = document.createElement('tr');
+                    const tdPort = document.createElement('td');
+                    tdPort.style.fontWeight = 'bold';
+                    tdPort.textContent = p.Port;
+                    const tdPid = document.createElement('td');
+                    tdPid.textContent = p.PID;
+                    const tdName = document.createElement('td');
+                    tdName.textContent = p.ProcessName || '(unknown)';
+                    const tdStatus = document.createElement('td');
+                    tdStatus.innerHTML = '<span class="status-tag">LISTENING</span>';
+                    
+                    const tdShare = document.createElement('td');
+                    const isTunneled = tunnels.includes(String(p.Port));
+                    if (isTunneled) {
+                        const tunnelUrl = window.location.origin + '/tunnel/route/' + p.Port + '/?session=' + sessionId;
+                        
+                        const linkBtn = document.createElement('button');
+                        linkBtn.className = 'btn';
+                        linkBtn.style.padding = '4px 8px';
+                        linkBtn.style.fontSize = '11px';
+                        linkBtn.style.display = 'inline-block';
+                        linkBtn.style.marginRight = '6px';
+                        linkBtn.textContent = '📋 Copy Link';
+                        linkBtn.onclick = () => {
+                            if (navigator.clipboard && navigator.clipboard.writeText) {
+                                navigator.clipboard.writeText(tunnelUrl).then(() => {
+                                    linkBtn.textContent = '✅ Copied!';
+                                    setTimeout(() => { linkBtn.textContent = '📋 Copy Link'; }, 2000);
+                                });
+                            } else {
+                                const ta = document.createElement('textarea');
+                                ta.value = tunnelUrl;
+                                ta.style.position = 'fixed';
+                                ta.style.opacity = '0';
+                                document.body.appendChild(ta);
+                                ta.select();
+                                document.execCommand('copy');
+                                document.body.removeChild(ta);
+                                linkBtn.textContent = '✅ Copied!';
+                                setTimeout(() => { linkBtn.textContent = '📋 Copy Link'; }, 2000);
+                            }
+                        };
+                        
+                        const stopBtn = document.createElement('button');
+                        stopBtn.className = 'btn-kill';
+                        stopBtn.textContent = 'Stop';
+                        stopBtn.onclick = () => disableTunnel(p.Port);
+                        
+                        tdShare.appendChild(linkBtn);
+                        tdShare.appendChild(stopBtn);
+                    } else {
+                        const shareBtn = document.createElement('button');
+                        shareBtn.className = 'btn';
+                        shareBtn.style.padding = '4px 10px';
+                        shareBtn.style.fontSize = '11px';
+                        shareBtn.textContent = 'Share Port';
+                        shareBtn.onclick = () => enableTunnel(p.Port);
+                        tdShare.appendChild(shareBtn);
                     }
-                    ports.sort((a, b) => a.Port - b.Port);
-                    ports.forEach(p => {
-                        const tr = document.createElement('tr');
-                        const tdPort = document.createElement('td');
-                        tdPort.style.fontWeight = 'bold';
-                        tdPort.textContent = p.Port;
-                        const tdPid = document.createElement('td');
-                        tdPid.textContent = p.PID;
-                        const tdName = document.createElement('td');
-                        tdName.textContent = p.ProcessName || '(unknown)';
-                        const tdStatus = document.createElement('td');
-                        tdStatus.innerHTML = '<span class="status-tag">LISTENING</span>';
-                        const tdAction = document.createElement('td');
-                        const killBtn = document.createElement('button');
-                        killBtn.className = 'btn-kill';
-                        killBtn.textContent = 'Kill Process';
-                        killBtn.onclick = () => killProcess(p.PID, p.Port, p.ProcessName);
-                        tdAction.appendChild(killBtn);
-                        tr.appendChild(tdPort);
-                        tr.appendChild(tdPid);
-                        tr.appendChild(tdName);
-                        tr.appendChild(tdStatus);
-                        tr.appendChild(tdAction);
-                        tbody.appendChild(tr);
-                    });
-                })
-                .catch(err => {
-                    tbody.innerHTML = '<tr><td colspan="5" class="empty" style="color:var(--bad)">Error loading ports: ' + err + '</td></tr>';
+                    
+                    const tdAction = document.createElement('td');
+                    const killBtn = document.createElement('button');
+                    killBtn.className = 'btn-kill';
+                    killBtn.textContent = 'Kill Process';
+                    killBtn.onclick = () => killProcess(p.PID, p.Port, p.ProcessName);
+                    tdAction.appendChild(killBtn);
+                    
+                    tr.appendChild(tdPort);
+                    tr.appendChild(tdPid);
+                    tr.appendChild(tdName);
+                    tr.appendChild(tdStatus);
+                    tr.appendChild(tdShare);
+                    tr.appendChild(tdAction);
+                    tbody.appendChild(tr);
                 });
+            })
+            .catch(err => {
+                tbody.innerHTML = '<tr><td colspan="6" class="empty" style="color:var(--bad)">Error loading ports: ' + err + '</td></tr>';
+            });
+        }
+        function enableTunnel(port) {
+            fetch('/tunnel/enable?port=' + port, { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        loadPorts();
+                    } else {
+                        alert('Failed to enable port sharing.');
+                    }
+                })
+                .catch(() => alert('Error connecting to server.'));
+        }
+        function disableTunnel(port) {
+            fetch('/tunnel/disable?port=' + port, { method: 'POST' })
+                .then(r => r.json())
+                .then(d => {
+                    if (d.success) {
+                        loadPorts();
+                    } else {
+                        alert('Failed to disable port sharing.');
+                    }
+                })
+                .catch(() => alert('Error connecting to server.'));
         }
         function killProcess(pid, port, name) {
             if (confirm('Are you sure you want to stop process ' + (name || '') + ' (PID: ' + pid + ') holding port ' + port + '?')) {

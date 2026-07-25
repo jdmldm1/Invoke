@@ -13,6 +13,8 @@ import (
 	"html"
 	"net"
 	"net/http"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,22 +35,61 @@ var wsUpgrader = websocket.Upgrader{
 	CheckOrigin:     func(r *http.Request) bool { return true },
 }
 
+type ViewerInfo struct {
+	RemoteAddr  string    `json:"remoteAddr"`
+	ConnectedAt time.Time `json:"connectedAt"`
+	UserAgent   string    `json:"userAgent"`
+}
+
 type ActiveSession struct {
 	ID         string
 	Cwd        string
-	Clients    map[*websocket.Conn]bool
+	Clients    map[*websocket.Conn]*ViewerInfo
 	ClientMu   sync.Mutex
 	History    []byte
 	HistoryMu  sync.Mutex
 	Cols, Rows int
 	SizeMu     sync.Mutex
 	Cpty       *conpty.ConPty
+	DataChan   chan []byte
+	StopChan   chan struct{}
 }
 
 var (
 	activeSessions   = make(map[string]*ActiveSession)
 	activeSessionsMu sync.Mutex
 )
+
+func (s *ActiveSession) startCoalescing() {
+	ticker := time.NewTicker(16 * time.Millisecond)
+	defer ticker.Stop()
+	var buffer []byte
+	for {
+		select {
+		case data, ok := <-s.DataChan:
+			if !ok {
+				return
+			}
+			buffer = append(buffer, data...)
+		case <-ticker.C:
+			if len(buffer) > 0 {
+				s.ClientMu.Lock()
+				for conn := range s.Clients {
+					_ = conn.SetWriteDeadline(time.Now().Add(50 * time.Millisecond))
+					err := conn.WriteMessage(websocket.BinaryMessage, buffer)
+					if err != nil {
+						conn.Close()
+						delete(s.Clients, conn)
+					}
+				}
+				s.ClientMu.Unlock()
+				buffer = nil
+			}
+		case <-s.StopChan:
+			return
+		}
+	}
+}
 
 var (
 	connMu        sync.Mutex
@@ -220,7 +261,7 @@ func networkAuthMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if r.URL.Path == "/cast" || r.URL.Path == "/ws/view" {
+		if r.URL.Path == "/cast" || r.URL.Path == "/ws/view" || strings.HasPrefix(r.URL.Path, "/tunnel/route/") {
 			sessionID := r.URL.Query().Get("session")
 			if sessionID != "" {
 				activeSessionsMu.Lock()
@@ -387,17 +428,21 @@ func handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 	var session *ActiveSession
 	if sessionID != "" {
 		session = &ActiveSession{
-			ID:      sessionID,
-			Cwd:     cwd,
-			Clients: make(map[*websocket.Conn]bool),
-			Cols:    cols,
-			Rows:    rows,
-			Cpty:    cpty,
+			ID:       sessionID,
+			Cwd:      cwd,
+			Clients:  make(map[*websocket.Conn]*ViewerInfo),
+			Cols:     cols,
+			Rows:     rows,
+			Cpty:     cpty,
+			DataChan: make(chan []byte, 100),
+			StopChan: make(chan struct{}),
 		}
+		go session.startCoalescing()
 		activeSessionsMu.Lock()
 		activeSessions[sessionID] = session
 		activeSessionsMu.Unlock()
 		defer func() {
+			close(session.StopChan)
 			activeSessionsMu.Lock()
 			delete(activeSessions, sessionID)
 			activeSessionsMu.Unlock()
@@ -431,11 +476,10 @@ func handleTerminalWS(w http.ResponseWriter, r *http.Request) {
 					}
 					session.HistoryMu.Unlock()
 
-					session.ClientMu.Lock()
-					for viewer := range session.Clients {
-						_ = viewer.WriteMessage(websocket.BinaryMessage, data)
+					select {
+					case session.DataChan <- data:
+					default:
 					}
-					session.ClientMu.Unlock()
 				}
 			}
 			if readErr != nil {
@@ -516,8 +560,13 @@ func handleTerminalViewWS(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
+	info := &ViewerInfo{
+		RemoteAddr:  r.RemoteAddr,
+		ConnectedAt: time.Now(),
+		UserAgent:   r.Header.Get("User-Agent"),
+	}
 	session.ClientMu.Lock()
-	session.Clients[conn] = true
+	session.Clients[conn] = info
 	session.ClientMu.Unlock()
 
 	defer func() {
@@ -562,13 +611,37 @@ func handleRemoteStatus(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodGet {
 		w.Header().Set("Content-Type", "application/json")
 		activeSessionsMu.Lock()
-		casting := make(map[string]int)
+
+		type ViewerData struct {
+			RemoteAddr  string `json:"remoteAddr"`
+			ConnectedAt string `json:"connectedAt"`
+			UserAgent   string `json:"userAgent"`
+		}
+		type CastingStatus struct {
+			Count   int          `json:"count"`
+			Viewers []ViewerData `json:"viewers"`
+		}
+
+		casting := make(map[string]CastingStatus)
 		for id, session := range activeSessions {
 			session.ClientMu.Lock()
 			count := len(session.Clients)
+			var viewers []ViewerData
+			for _, info := range session.Clients {
+				if info != nil {
+					viewers = append(viewers, ViewerData{
+						RemoteAddr:  info.RemoteAddr,
+						ConnectedAt: info.ConnectedAt.Format(time.RFC3339),
+						UserAgent:   info.UserAgent,
+					})
+				}
+			}
 			session.ClientMu.Unlock()
 			if count > 0 {
-				casting[id] = count
+				casting[id] = CastingStatus{
+					Count:   count,
+					Viewers: viewers,
+				}
 			}
 		}
 		activeSessionsMu.Unlock()
@@ -598,6 +671,88 @@ func handleRemoteStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+var (
+	activeTunnels   = make(map[string]bool)
+	activeTunnelsMu sync.Mutex
+)
+
+func handleTunnelEnable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	port := r.URL.Query().Get("port")
+	if port == "" {
+		http.Error(w, "missing port", 400)
+		return
+	}
+	activeTunnelsMu.Lock()
+	activeTunnels[port] = true
+	activeTunnelsMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+}
+
+func handleTunnelDisable(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "POST required", http.StatusMethodNotAllowed)
+		return
+	}
+	port := r.URL.Query().Get("port")
+	if port == "" {
+		http.Error(w, "missing port", 400)
+		return
+	}
+	activeTunnelsMu.Lock()
+	delete(activeTunnels, port)
+	activeTunnelsMu.Unlock()
+
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+}
+
+func handleTunnelStatus(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	activeTunnelsMu.Lock()
+	list := []string{}
+	for port := range activeTunnels {
+		list = append(list, port)
+	}
+	activeTunnelsMu.Unlock()
+	_ = json.NewEncoder(w).Encode(list)
+}
+
+func handleTunnelProxy(w http.ResponseWriter, r *http.Request) {
+	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/"), "/")
+	if len(parts) < 3 {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	portStr := parts[2]
+
+	activeTunnelsMu.Lock()
+	enabled := activeTunnels[portStr]
+	activeTunnelsMu.Unlock()
+
+	if !enabled {
+		http.Error(w, "Tunnel not active", 403)
+		return
+	}
+
+	targetURL, err := url.Parse(fmt.Sprintf("http://127.0.0.1:%s", portStr))
+	if err != nil {
+		http.Error(w, "invalid port", 400)
+		return
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(targetURL)
+	r.URL.Path = "/" + strings.Join(parts[3:], "/")
+
+	r.Header.Set("X-Forwarded-Host", r.Header.Get("Host"))
+	proxy.ServeHTTP(w, r)
 }
 
 func openAppWindow(url string) {
@@ -718,6 +873,10 @@ func serveTerminalWindow() {
 	mux.HandleFunc("/ws/view", handleTerminalViewWS)
 	mux.HandleFunc("/cast", handleCastPage)
 	mux.HandleFunc("/remote-status", handleRemoteStatus)
+	mux.HandleFunc("/tunnel/enable", handleTunnelEnable)
+	mux.HandleFunc("/tunnel/disable", handleTunnelDisable)
+	mux.HandleFunc("/tunnel/status", handleTunnelStatus)
+	mux.HandleFunc("/tunnel/route/", handleTunnelProxy)
 	mux.HandleFunc("/control", handleControlWS)
 	mux.HandleFunc("/open", handleOpenRequest)
 	mux.HandleFunc("/diff", handleDiffRoute)

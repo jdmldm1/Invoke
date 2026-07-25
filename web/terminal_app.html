@@ -1954,6 +1954,75 @@
     const cleanLine = line.replace(/^[❯$#>]\s*/, '').trim();
     console.log('[Context] cleanLine after removing prompt:', JSON.stringify(cleanLine));
 
+    const parts = cleanLine.split(/\s+/);
+    if (parts.length > 0) {
+      const cmdName = parts[0].toLowerCase();
+      if (cmdName === 'cd') {
+        const partialDir = parts.slice(1).join(' ').trim();
+        fetch('/fs?dir=' + encodeURIComponent(pane.cwd || ''))
+          .then(r => r.json())
+          .then(data => {
+            if (data && data.entries) {
+              const matches = data.entries.filter(e => e.dir && e.name.toLowerCase().startsWith(partialDir.toLowerCase()));
+              if (matches.length > 0) {
+                const currentLine = getCurrentInputLine(pane);
+                const currentClean = currentLine.replace(/^[❯$#>]\s*/, '').trim();
+                if (currentClean.toLowerCase().startsWith('cd ')) {
+                  const currentPartial = currentClean.substring(3).trim();
+                  const finalMatches = matches.filter(e => e.name.toLowerCase().startsWith(currentPartial.toLowerCase()));
+                  const newSuggestions = finalMatches.slice(0, 5).map(e => e.name.substring(currentPartial.length));
+                  if (newSuggestions.length > 0) {
+                    if (ghostActive) {
+                      const currentSuggestions = [...ghostSuggestions];
+                      newSuggestions.forEach(s => {
+                        if (!currentSuggestions.includes(s)) currentSuggestions.push(s);
+                      });
+                      showGhost(currentSuggestions, pane);
+                    } else {
+                      showGhost(newSuggestions, pane);
+                    }
+                  }
+                }
+              }
+            }
+          })
+          .catch(() => {});
+      } else if (parts.length > 1) {
+        const lastPart = parts[parts.length - 1];
+        if (lastPart && !lastPart.startsWith('-') && !lastPart.startsWith('/')) {
+          fetch('/fs?dir=' + encodeURIComponent(pane.cwd || ''))
+            .then(r => r.json())
+            .then(data => {
+              if (data && data.entries) {
+                const matches = data.entries.filter(e => e.name.toLowerCase().startsWith(lastPart.toLowerCase()));
+                if (matches.length > 0) {
+                  const currentLine = getCurrentInputLine(pane);
+                  const currentClean = currentLine.replace(/^[❯$#>]\s*/, '').trim();
+                  const currentParts = currentClean.split(/\s+/);
+                  const currentLast = currentParts[currentParts.length - 1];
+                  if (currentLast && currentLast.toLowerCase().startsWith(lastPart.toLowerCase())) {
+                    const finalMatches = matches.filter(e => e.name.toLowerCase().startsWith(currentLast.toLowerCase()));
+                    const newSuggestions = finalMatches.slice(0, 5).map(e => e.name.substring(currentLast.length));
+                    if (newSuggestions.length > 0) {
+                      if (ghostActive) {
+                        const currentSuggestions = [...ghostSuggestions];
+                        newSuggestions.forEach(s => {
+                          if (!currentSuggestions.includes(s)) currentSuggestions.push(s);
+                        });
+                        showGhost(currentSuggestions, pane);
+                      } else {
+                        showGhost(newSuggestions, pane);
+                      }
+                    }
+                  }
+                }
+              }
+            })
+            .catch(() => {});
+        }
+      }
+    }
+
     if (cleanLine.startsWith('docker run ')) {
       const partial = cleanLine.substring(11).trim();
       console.log('[Context] Looking for docker images starting with:', partial);
@@ -4231,7 +4300,7 @@
         activeCasts = data.casting || {};
         let totalViewers = 0;
         for (let sid in activeCasts) {
-          totalViewers += activeCasts[sid];
+          totalViewers += activeCasts[sid].count || 0;
         }
 
         const castSeg = document.getElementById('segCast');
@@ -4252,26 +4321,46 @@
     overlay.className = 'snippet-modal-overlay';
     const modal = document.createElement('div');
     modal.className = 'snippet-modal';
-    modal.style.width = '440px';
+    modal.style.width = '460px';
 
     let contentHtml = '';
     contentHtml += '<h3 style="margin:0 0 12px;font-size:16px;color:#38bdf8;display:flex;align-items:center;gap:8px;">📺 Active Screen Casts</h3>';
     contentHtml += '<p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5;">The following terminal sessions are currently broadcasting to live viewers:</p>';
-    contentHtml += '<div style="background:#0d0d0d;border:1px solid var(--border2);border-radius:6px;padding:12px;max-height:200px;overflow-y:auto;margin-bottom:20px;">';
+    contentHtml += '<div style="background:#0d0d0d;border:1px solid var(--border2);border-radius:6px;padding:12px;max-height:220px;overflow-y:auto;margin-bottom:20px;">';
     
     let hasCasts = false;
     for (let sid in activeCasts) {
-      const viewerCount = activeCasts[sid];
-      if (viewerCount > 0) {
+      const castData = activeCasts[sid];
+      if (castData && castData.count > 0) {
         hasCasts = true;
         let tabName = "Terminal Session";
         const termTab = tabs.find(t => t.type === 'term' && Array.from(t.panes).some(p => p.sessionId === sid));
         if (termTab) {
           tabName = termTab.name;
         }
-        contentHtml += '<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid rgba(255,255,255,0.03);">';
-        contentHtml += '  <span style="font-weight:500;color:var(--text);">' + tabName + '</span>';
-        contentHtml += '  <span style="font-size:11px;color:var(--muted);background:rgba(56,189,248,0.1);padding:2px 6px;border-radius:4px;">' + viewerCount + (viewerCount === 1 ? ' viewer' : ' viewers') + '</span>';
+        contentHtml += '<div style="margin-bottom:12px;border-bottom:1px solid rgba(255,255,255,0.04);padding-bottom:10px;">';
+        contentHtml += '  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">';
+        contentHtml += '    <span style="font-weight:600;color:var(--text);">' + tabName + '</span>';
+        contentHtml += '    <span style="font-size:11px;color:var(--muted);background:rgba(56,189,248,0.1);padding:2px 6px;border-radius:4px;">' + castData.count + (castData.count === 1 ? ' viewer' : ' viewers') + '</span>';
+        contentHtml += '  </div>';
+        
+        if (castData.viewers && castData.viewers.length > 0) {
+          contentHtml += '  <div style="display:flex;flex-direction:column;gap:4px;padding-left:8px;margin-top:6px;">';
+          castData.viewers.forEach(v => {
+            const timeStr = new Date(v.connectedAt).toLocaleTimeString();
+            let uaShort = "Browser";
+            if (v.userAgent.includes("Chrome")) uaShort = "Chrome";
+            else if (v.userAgent.includes("Firefox")) uaShort = "Firefox";
+            else if (v.userAgent.includes("Safari")) uaShort = "Safari";
+            else if (v.userAgent.includes("Edge")) uaShort = "Edge";
+            
+            contentHtml += '    <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);" title="' + v.userAgent + '">';
+            contentHtml += '      <span>👤 ' + v.remoteAddr + ' (' + uaShort + ')</span>';
+            contentHtml += '      <span>since ' + timeStr + '</span>';
+            contentHtml += '    </div>';
+          });
+          contentHtml += '  </div>';
+        }
         contentHtml += '</div>';
       }
     }
@@ -4311,6 +4400,82 @@
           .catch(() => alert('Error connecting to server.'));
       };
     }
+  }
+
+  function showBroadcastControllerModal() {
+    const overlay = document.createElement('div');
+    overlay.className = 'snippet-modal-overlay';
+    const modal = document.createElement('div');
+    modal.className = 'snippet-modal';
+    modal.style.width = '480px';
+    
+    let contentHtml = '';
+    contentHtml += '<h3 style="margin:0 0 12px;font-size:16px;color:#38bdf8;display:flex;align-items:center;gap:8px;">📣 Broadcast Command</h3>';
+    contentHtml += '<p style="font-size:12px;color:var(--muted);margin-bottom:16px;line-height:1.5;">Type a command to execute simultaneously across selected terminal sessions:</p>';
+    contentHtml += '<div style="margin-bottom:16px;">';
+    contentHtml += '  <input type="text" id="broadcast-cmd-input" placeholder="e.g. git status" style="width:100%;background:#0d0d0d;border:1px solid var(--border2);color:var(--text);padding:8px 12px;border-radius:6px;font-family:monospace;font-size:13px;outline:none;" />';
+    contentHtml += '</div>';
+    contentHtml += '<label style="display:block;font-size:12px;color:var(--muted);margin-bottom:8px;">Target Terminals</label>';
+    contentHtml += '<div style="background:#0d0d0d;border:1px solid var(--border2);border-radius:6px;padding:8px 12px;max-height:160px;overflow-y:auto;margin-bottom:20px;display:flex;flex-direction:column;gap:8px;">';
+    
+    let termTabs = tabs.filter(t => t.type === 'term');
+    termTabs.forEach((t, i) => {
+      contentHtml += '<label style="display:flex;align-items:center;gap:8px;font-size:13px;cursor:pointer;color:var(--text);">';
+      contentHtml += '  <input type="checkbox" class="broadcast-target-chk" data-tab-index="' + i + '" checked style="cursor:pointer;" />';
+      contentHtml += '  <span>' + t.name + '</span>';
+      contentHtml += '</label>';
+    });
+    
+    if (termTabs.length === 0) {
+      contentHtml += '<div style="color:var(--muted);font-style:italic;text-align:center;padding:10px 0;">No active terminal sessions.</div>';
+    }
+    contentHtml += '</div>';
+
+    contentHtml += '<div class="modal-btns" style="display:flex;justify-content:flex-end;gap:12px;">';
+    contentHtml += '  <button class="modal-btn cancel" id="broadcast-btn-close" style="padding:8px 16px;border-radius:6px;cursor:pointer;background:var(--panel2);color:var(--muted);border:1px solid var(--border2);">Cancel</button>';
+    if (termTabs.length > 0) {
+      contentHtml += '  <button class="modal-btn" id="broadcast-btn-send" style="padding:8px 20px;border-radius:6px;cursor:pointer;background:#38bdf8;color:#000;border:none;font-weight:600;">⚡ Execute</button>';
+    }
+    contentHtml += '</div>';
+
+    modal.innerHTML = contentHtml;
+    overlay.appendChild(modal);
+    document.body.appendChild(overlay);
+
+    const input = modal.querySelector('#broadcast-cmd-input');
+    input.focus();
+    input.onkeydown = e => {
+      if (e.key === 'Enter') sendCmd();
+    };
+
+    function sendCmd() {
+      const cmd = input.value.trim();
+      if (!cmd) return;
+      const chks = modal.querySelectorAll('.broadcast-target-chk:checked');
+      chks.forEach(chk => {
+        const idx = parseInt(chk.getAttribute('data-tab-index'), 10);
+        const tab = termTabs[idx];
+        if (tab) {
+          tab.panes.forEach(pane => {
+            if (pane instanceof Pane) {
+              pane.send({ t: 'i', d: cmd + '\r' });
+            }
+          });
+        }
+      });
+      overlay.remove();
+    }
+
+    if (termTabs.length > 0) {
+      modal.querySelector('#broadcast-btn-send').onclick = sendCmd;
+    }
+    modal.querySelector('#broadcast-btn-close').onclick = () => overlay.remove();
+  }
+
+  const segBroadcastEl = document.getElementById('segBroadcast');
+  if (segBroadcastEl) {
+    segBroadcastEl.style.cursor = 'pointer';
+    segBroadcastEl.addEventListener('click', showBroadcastControllerModal);
   }
 
   const segCastEl = document.getElementById('segCast');
