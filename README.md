@@ -1,6 +1,6 @@
 # Invoke
 
-Air-gapped terminal with file editor and tools.
+Air-gapped powershell terminal for windows, with file editor and tools.
 
 ![Invoke terminal](docs/screenshots/terminal.png)
 
