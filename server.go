@@ -851,7 +851,11 @@ func serveTerminalWindow() {
 		return
 	}
 	port := listener.Addr().(*net.TCPAddr).Port
-	serverPort = port
+	if startConfig.ServerPort > 0 {
+		serverPort = startConfig.ServerPort
+	} else {
+		serverPort = port
+	}
 	url := fmt.Sprintf("http://localhost:%d", port)
 
 	mux := http.NewServeMux()

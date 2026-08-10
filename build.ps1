@@ -29,6 +29,8 @@ if (-not (Test-Path $BuildDir)) {
 
 Write-Host "Building invoke-app.exe..." -ForegroundColor Yellow
 Push-Location (Join-Path $ProjectRoot "cmd\invoke-app")
+$env:GOOS = "windows"
+$env:GOARCH = "amd64"
 try {
     go build -ldflags "-H windowsgui" -o (Join-Path $BuildDir "invoke-app.exe") .
     if ($LASTEXITCODE -ne 0) {

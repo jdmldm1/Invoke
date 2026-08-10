@@ -71,10 +71,16 @@ func initConfig() {
 	}
 	configPath = filepath.Join(home, ".invoke.json")
 
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		log.Printf("[initConfig] Unable to create config directory %s: %v", filepath.Dir(configPath), err)
+	}
+
 	oldConfig := filepath.Join(home, ".powerterm.json")
 	if _, err := os.Stat(configPath); os.IsNotExist(err) {
 		if _, errOld := os.Stat(oldConfig); errOld == nil {
-			_ = os.Rename(oldConfig, configPath)
+			if renameErr := os.Rename(oldConfig, configPath); renameErr != nil {
+				log.Printf("[initConfig] Failed to migrate old config: %v", renameErr)
+			}
 		}
 	}
 }
@@ -86,10 +92,16 @@ func initLayouts() {
 	}
 	layoutPath = filepath.Join(home, ".invoke_layouts.json")
 
+	if err := os.MkdirAll(filepath.Dir(layoutPath), 0755); err != nil {
+		log.Printf("[initLayouts] Unable to create layout directory %s: %v", filepath.Dir(layoutPath), err)
+	}
+
 	oldLayouts := filepath.Join(home, ".powerterm_layouts.json")
 	if _, err := os.Stat(layoutPath); os.IsNotExist(err) {
 		if _, errOld := os.Stat(oldLayouts); errOld == nil {
-			_ = os.Rename(oldLayouts, layoutPath)
+			if renameErr := os.Rename(oldLayouts, layoutPath); renameErr != nil {
+				log.Printf("[initLayouts] Failed to migrate old layouts: %v", renameErr)
+			}
 		}
 	}
 }
