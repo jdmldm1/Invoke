@@ -45,6 +45,16 @@ jobs:
           GOARCH: amd64
           CGO_ENABLED: 0
         run: go build -v -ldflags "-H windowsgui" -o build/invoke-app.exe .\cmd\invoke-app\
+- name: SonarCloud Scan
+  uses: sonarsource/sonarcloud-github-action@v2
+  with:
+    args: >
+      -Dsonar.organization=jdmldm1
+      -Dsonar.projectKey=jdmldm1_Invoke
+      -Dsonar.sources=.
+      -Dsonar.host.url=https://sonarcloud.io
+  env:
+    SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
 
       # ── Install WiX v4 toolset ─────────────────────────────────────────────
       - name: Install WiX Toolset v4
@@ -85,7 +95,7 @@ jobs:
       # ── Publish rolling "latest" release on every main push ───────────────
       - name: Publish Latest Dev Release
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e875156d11f79f228
         with:
           tag_name: latest
           name: Latest Development Build
