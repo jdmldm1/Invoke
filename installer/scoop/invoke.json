@@ -1,0 +1,10 @@
+{
+  "version": "1.0.0",
+  "description": "Air-gapped PowerShell terminal for Windows with built-in Monaco editor, visual Git tools, and local AI",
+  "homepage": "https://github.com/invoke/powerterm",
+  "license": "MIT",
+  "bin": [
+    ["invoke-app.exe", "invoke"],
+    ["invoke-server.exe", "pt"]
+  ]
+}

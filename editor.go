@@ -536,7 +536,8 @@ func handleFileSave(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "bad request", 400)
 		return
 	}
-	if err := os.WriteFile(req.File, []byte(req.Content), 0644); err != nil {
+	cleanFile := filepath.Clean(req.File)
+	if err := os.WriteFile(cleanFile, []byte(req.Content), 0644); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}

@@ -1,0 +1,14 @@
+PackageIdentifier: Invoke.Powerterm
+PackageVersion: 1.0.0
+PackageName: Invoke Terminal
+Publisher: Invoke
+License: MIT
+ShortDescription: Air-gapped PowerShell terminal for Windows with built-in Monaco editor, visual Git tools, and local AI.
+ManifestType: singleton
+ManifestVersion: 1.6.0
+Installers:
+  - Architecture: x64
+    InstallerType: portable
+    Commands:
+      - pt
+      - invoke

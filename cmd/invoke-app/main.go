@@ -84,7 +84,7 @@ func main() {
 	defer runtime.UnlockOSThread()
 
 	w := webview2.NewWithOptions(webview2.WebViewOptions{
-		Debug:    false,
+		Debug:    true,
 		DataPath: filepath.Join(os.TempDir(), "invoke-app-webview-data"),
 		WindowOptions: webview2.WindowOptions{
 			Title:  "Invoke",

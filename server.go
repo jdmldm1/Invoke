@@ -738,7 +738,7 @@ func handleTunnelProxy(w http.ResponseWriter, r *http.Request) {
 	activeTunnelsMu.Unlock()
 
 	if !enabled {
-		http.Error(w, "Tunnel not active", 403)
+		http.Error(w, "Tunnel not active", http.StatusForbidden)
 		return
 	}
 
@@ -931,6 +931,9 @@ func serveTerminalWindow() {
 	mux.HandleFunc("/network-access", handleNetworkAccess)
 	mux.HandleFunc("/remote-login", handleRemoteLogin)
 	mux.HandleFunc("/ai-cli-schema", handleAICLISchema)
+	mux.HandleFunc("/workspace/load", handleWorkspaceLoad)
+	mux.HandleFunc("/workspace/save", handleWorkspaceSave)
+	mux.HandleFunc("/clipboard/read", handleClipboardRead)
 
 	go func() {
 		zero := 0
@@ -1324,3 +1327,39 @@ func handleState(w http.ResponseWriter, r *http.Request) {
 	}
 	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 }
+
+func handleWorkspaceLoad(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	dir := r.URL.Query().Get("dir")
+	if dir == "" {
+		dir, _ = os.Getwd()
+	}
+	cfg, ok := loadWorkspaceConfig(dir)
+	if !ok {
+		_ = json.NewEncoder(w).Encode(map[string]any{"found": false})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"found": true, "config": cfg})
+}
+
+func handleWorkspaceSave(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var req struct {
+		Dir    string          `json:"dir"`
+		Config WorkspaceConfig `json:"config"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.Dir == "" {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	if err := saveWorkspaceConfig(req.Dir, req.Config); err != nil {
+		_ = json.NewEncoder(w).Encode(map[string]any{"success": false, "error": err.Error()})
+		return
+	}
+	_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
+}
+

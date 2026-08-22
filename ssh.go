@@ -1,12 +1,14 @@
 package main
 
 import (
+	"bufio"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"os"
@@ -32,7 +34,72 @@ type FSNode struct {
 	Children []FSNode `json:"children,omitempty"`
 }
 
+func parseSSHConfigFile() []SSHEndpoint {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil
+	}
+	configPath := filepath.Join(home, ".ssh", "config")
+	file, err := os.Open(configPath)
+	if err != nil {
+		return nil
+	}
+	defer file.Close()
+
+	var endpoints []SSHEndpoint
+	var current *SSHEndpoint
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		fields := strings.Fields(line)
+		if len(fields) < 2 {
+			continue
+		}
+
+		key := strings.ToLower(fields[0])
+		val := fields[1]
+
+		if key == "host" {
+			if val == "*" || strings.Contains(val, "*") {
+				current = nil
+				continue
+			}
+			if current != nil && current.Host != "" {
+				endpoints = append(endpoints, *current)
+			}
+			current = &SSHEndpoint{
+				Name:   val + " (.ssh/config)",
+				Host:   val,
+				Port:   22,
+				UseKey: true,
+			}
+		} else if current != nil {
+			switch key {
+			case "hostname":
+				current.Host = val
+			case "user":
+				current.User = val
+			case "port":
+				var p int
+				if n, err := fmt.Sscanf(val, "%d", &p); err == nil && n > 0 && p > 0 {
+					current.Port = p
+				}
+			}
+		}
+	}
+	if current != nil && current.Host != "" {
+		endpoints = append(endpoints, *current)
+	}
+	return endpoints
+}
+
 func sshMachineKey() []byte {
+
 	hostname, _ := os.Hostname()
 	salt := "invoke-ssh-v1:" + hostname
 	sum := sha256.Sum256([]byte(salt))
@@ -97,6 +164,10 @@ func handleSSHEndpoints(w http.ResponseWriter, r *http.Request) {
 		copy(safe, cfg.SSHEndpoints)
 		for i := range safe {
 			safe[i].EncPassword = ""
+		}
+		sshParsed := parseSSHConfigFile()
+		if len(sshParsed) > 0 {
+			safe = append(safe, sshParsed...)
 		}
 		_ = json.NewEncoder(w).Encode(safe)
 		return
