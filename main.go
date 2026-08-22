@@ -93,9 +93,26 @@ func main() {
 			return
 		}
 		getHoverInfo(os.Args[2])
+	case "wsl":
+		runWSLMode()
 	default:
 		fmt.Printf("Unknown command: %s\nRun 'pt help' to see available commands.\n", command)
 	}
+}
+
+func runWSLMode() {
+	wslCmd := "wsl.exe"
+	var cmd *exec.Cmd
+	if len(os.Args) >= 3 {
+		distro := os.Args[2]
+		cmd = exec.Command(wslCmd, "-d", distro)
+	} else {
+		cmd = exec.Command(wslCmd)
+	}
+	cmd.Stdin = os.Stdin
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	_ = cmd.Run()
 }
 
 func runTerminalMode() {

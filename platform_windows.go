@@ -410,3 +410,41 @@ func killProcess(pid int) error {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return cmd.Run()
 }
+
+func readWindowsClipboardText() string {
+	user32 := windows.NewLazySystemDLL("user32.dll")
+	kernel32 := windows.NewLazySystemDLL("kernel32.dll")
+
+	openClipboard := user32.NewProc("OpenClipboard")
+	closeClipboard := user32.NewProc("CloseClipboard")
+	getClipboardData := user32.NewProc("GetClipboardData")
+	globalLock := kernel32.NewProc("GlobalLock")
+	globalUnlock := kernel32.NewProc("GlobalUnlock")
+
+	const CF_UNICODETEXT = 13
+
+	r, _, _ := openClipboard.Call(0)
+	if r == 0 {
+		return ""
+	}
+	defer closeClipboard.Call()
+
+	hData, _, _ := getClipboardData.Call(CF_UNICODETEXT)
+	if hData == 0 {
+		return ""
+	}
+
+	ptr, _, _ := globalLock.Call(hData)
+	if ptr == 0 {
+		return ""
+	}
+	defer globalUnlock.Call(hData)
+
+	return windows.UTF16ToString((*[1 << 20]uint16)(unsafe.Pointer(ptr))[:])
+}
+
+func handleClipboardRead(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	text := readWindowsClipboardText()
+	_ = json.NewEncoder(w).Encode(map[string]string{"text": text})
+}

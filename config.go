@@ -431,3 +431,47 @@ func handleHistory(w http.ResponseWriter, r *http.Request) {
 
 	json.NewEncoder(w).Encode(unique)
 }
+
+type WorkspaceConfig struct {
+	Name          string            `json:"name"`
+	Cwd           string            `json:"cwd"`
+	Env           map[string]string `json:"env,omitempty"`
+	Tasks         []Snippet         `json:"tasks,omitempty"`
+	Snippets      []Snippet         `json:"snippets,omitempty"`
+	DefaultLayout string            `json:"default_layout,omitempty"`
+}
+
+func loadWorkspaceConfig(dir string) (WorkspaceConfig, bool) {
+	if dir == "" {
+		return WorkspaceConfig{}, false
+	}
+	wsPath := filepath.Join(dir, ".invoke-workspace")
+	if _, err := os.Stat(wsPath); os.IsNotExist(err) {
+		wsPath = filepath.Join(dir, "invoke.config.json")
+		if _, errOld := os.Stat(wsPath); os.IsNotExist(errOld) {
+			return WorkspaceConfig{}, false
+		}
+	}
+	data, err := os.ReadFile(wsPath)
+	if err != nil {
+		return WorkspaceConfig{}, false
+	}
+	var cfg WorkspaceConfig
+	if err := json.Unmarshal(data, &cfg); err != nil {
+		return WorkspaceConfig{}, false
+	}
+	return cfg, true
+}
+
+func saveWorkspaceConfig(dir string, cfg WorkspaceConfig) error {
+	if dir == "" {
+		return os.ErrInvalid
+	}
+	wsPath := filepath.Join(dir, ".invoke-workspace")
+	data, err := json.MarshalIndent(cfg, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(wsPath, data, 0644)
+}
+

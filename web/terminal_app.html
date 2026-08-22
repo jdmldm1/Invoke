@@ -180,6 +180,22 @@
     <div id="palette-out" class="palette-results"></div>
   </div>
 </div>
+<div id="quick-open" class="palette-overlay">
+  <div class="palette-box">
+    <div class="palette-input-wrap">
+      <input type="text" id="quick-open-in" class="palette-input" placeholder="Go to file (Ctrl+P)..." autocomplete="off">
+    </div>
+    <div id="quick-open-out" class="palette-results"></div>
+  </div>
+</div>
+<div id="history-modal" class="palette-overlay">
+  <div class="palette-box">
+    <div class="palette-input-wrap">
+      <input type="text" id="history-modal-in" class="palette-input" placeholder="Search terminal history (Ctrl+R)..." autocomplete="off">
+    </div>
+    <div id="history-modal-out" class="palette-results"></div>
+  </div>
+</div>
 <div id="app">
   <div id="titlebar">
     <div id="brand">
@@ -2467,6 +2483,8 @@
     paletteIdx = 0;
     
     paletteItems = [
+      {label: "Quick Open File...", action: () => openQuickOpen(), shortcut: "Ctrl+P"},
+      {label: "Search Shell History...", action: () => openHistorySearchModal(), shortcut: "Ctrl+R"},
       {label: "Intelligent CLI Helper...", action: () => openCLIHelperPromptModal()},
       {label: "New Terminal Tab", action: () => newTab(), shortcut: "Ctrl+Shift+T"},
       {label: "Split Pane Vertically", action: () => split('right'), shortcut: "Ctrl+Shift+D"},
@@ -2582,6 +2600,203 @@
 
   paletteEl.onclick = function(e) {
     if (e.target === paletteEl) closePalette();
+  };
+
+  // Quick Open Modal (Ctrl+P)
+  let quickOpenActive = false;
+  let quickOpenFiles = [];
+  let quickOpenIdx = 0;
+  const quickOpenEl = document.getElementById('quick-open');
+  const quickOpenIn = document.getElementById('quick-open-in');
+  const quickOpenOut = document.getElementById('quick-open-out');
+
+  function openQuickOpen() {
+    quickOpenActive = true;
+    quickOpenEl.style.display = 'flex';
+    quickOpenIn.value = '';
+    quickOpenIdx = 0;
+    quickOpenFiles = [];
+    fetchQuickOpenFiles();
+    setTimeout(() => quickOpenIn.focus(), 50);
+  }
+
+  function closeQuickOpen() {
+    quickOpenActive = false;
+    quickOpenEl.style.display = 'none';
+    if (activePane) activePane.focus();
+  }
+
+  function fetchQuickOpenFiles() {
+    const q = quickOpenIn.value.trim();
+    const dir = activePane ? activePane.cwd : sidebarDir;
+    fetch('/file-search?q=' + encodeURIComponent(q) + '&dir=' + encodeURIComponent(dir || ''))
+      .then(r => r.json())
+      .then(files => {
+        quickOpenFiles = files || [];
+        quickOpenIdx = Math.min(quickOpenIdx, Math.max(0, quickOpenFiles.length - 1));
+        renderQuickOpen();
+      })
+      .catch(() => {
+        quickOpenFiles = [];
+        renderQuickOpen();
+      });
+  }
+
+  function renderQuickOpen() {
+    quickOpenOut.innerHTML = '';
+    if (quickOpenFiles.length === 0) {
+      quickOpenOut.innerHTML = '<div style="padding:12px;color:var(--muted);font-size:12px">No files found</div>';
+      return;
+    }
+    quickOpenFiles.forEach((file, idx) => {
+      const div = document.createElement('div');
+      div.className = 'palette-item' + (idx === quickOpenIdx ? ' active' : '');
+      const lbl = document.createElement('span');
+      lbl.textContent = '📄 ' + file;
+      div.appendChild(lbl);
+      div.onclick = () => {
+        const dir = activePane ? activePane.cwd : sidebarDir;
+        const sep = (dir && dir.includes('/')) ? '/' : '\\';
+        const fullPath = (dir ? dir.replace(/[\\\/]$/, '') + sep : '') + file;
+        const fileName = file.split(/[\\\/]/).pop();
+        closeQuickOpen();
+        openViewTab({type: 'edit', file: fullPath, name: fileName});
+      };
+      quickOpenOut.appendChild(div);
+    });
+  }
+
+  let quickOpenDebounce = null;
+  quickOpenIn.oninput = function() {
+    if (quickOpenDebounce) clearTimeout(quickOpenDebounce);
+    quickOpenDebounce = setTimeout(fetchQuickOpenFiles, 100);
+  };
+
+  quickOpenIn.onkeydown = function(e) {
+    if (e.key === 'Escape') {
+      closeQuickOpen();
+      e.preventDefault();
+    } else if (e.key === 'ArrowDown') {
+      quickOpenIdx = (quickOpenIdx + 1) % Math.max(1, quickOpenFiles.length);
+      renderQuickOpen();
+      e.preventDefault();
+    } else if (e.key === 'ArrowUp') {
+      quickOpenIdx = (quickOpenIdx - 1 + quickOpenFiles.length) % Math.max(1, quickOpenFiles.length);
+      renderQuickOpen();
+      e.preventDefault();
+    } else if (e.key === 'Enter') {
+      if (quickOpenFiles[quickOpenIdx]) {
+        const file = quickOpenFiles[quickOpenIdx];
+        const dir = activePane ? activePane.cwd : sidebarDir;
+        const sep = (dir && dir.includes('/')) ? '/' : '\\';
+        const fullPath = (dir ? dir.replace(/[\\\/]$/, '') + sep : '') + file;
+        const fileName = file.split(/[\\\/]/).pop();
+        closeQuickOpen();
+        openViewTab({type: 'edit', file: fullPath, name: fileName});
+      }
+      e.preventDefault();
+    }
+  };
+
+  quickOpenEl.onclick = function(e) {
+    if (e.target === quickOpenEl) closeQuickOpen();
+  };
+
+  // Fuzzy History Search Overlay (Ctrl+R)
+  let historyModalActive = false;
+  let rawHistoryItems = [];
+  let filteredHistoryItems = [];
+  let historyModalIdx = 0;
+  const historyModalEl = document.getElementById('history-modal');
+  const historyModalIn = document.getElementById('history-modal-in');
+  const historyModalOut = document.getElementById('history-modal-out');
+
+  function openHistorySearchModal() {
+    historyModalActive = true;
+    historyModalEl.style.display = 'flex';
+    historyModalIn.value = '';
+    historyModalIdx = 0;
+    fetchHistoryModalItems();
+    setTimeout(() => historyModalIn.focus(), 50);
+  }
+
+  function closeHistorySearchModal() {
+    historyModalActive = false;
+    historyModalEl.style.display = 'none';
+    if (activePane) activePane.focus();
+  }
+
+  function fetchHistoryModalItems() {
+    fetch('/history')
+      .then(r => r.json())
+      .then(hist => {
+        rawHistoryItems = hist || [];
+        filterHistoryModalItems();
+      })
+      .catch(() => {
+        rawHistoryItems = [];
+        filterHistoryModalItems();
+      });
+  }
+
+  function filterHistoryModalItems() {
+    const q = historyModalIn.value.toLowerCase().trim();
+    if (!q) {
+      filteredHistoryItems = [...rawHistoryItems];
+    } else {
+      filteredHistoryItems = rawHistoryItems.filter(h => h.toLowerCase().includes(q));
+    }
+    historyModalIdx = Math.min(historyModalIdx, Math.max(0, filteredHistoryItems.length - 1));
+    renderHistoryModal();
+  }
+
+  function renderHistoryModal() {
+    historyModalOut.innerHTML = '';
+    if (filteredHistoryItems.length === 0) {
+      historyModalOut.innerHTML = '<div style="padding:12px;color:var(--muted);font-size:12px">No history matching search</div>';
+      return;
+    }
+    filteredHistoryItems.forEach((cmd, idx) => {
+      const div = document.createElement('div');
+      div.className = 'palette-item' + (idx === historyModalIdx ? ' active' : '');
+      const lbl = document.createElement('span');
+      lbl.textContent = '⚡ ' + cmd;
+      lbl.style.fontFamily = "'Cascadia Code', monospace";
+      lbl.style.fontSize = '12px';
+      div.appendChild(lbl);
+      div.onclick = () => {
+        closeHistorySearchModal();
+        sendToActive(cmd);
+      };
+      historyModalOut.appendChild(div);
+    });
+  }
+
+  historyModalIn.oninput = filterHistoryModalItems;
+  historyModalIn.onkeydown = function(e) {
+    if (e.key === 'Escape') {
+      closeHistorySearchModal();
+      e.preventDefault();
+    } else if (e.key === 'ArrowDown') {
+      historyModalIdx = (historyModalIdx + 1) % Math.max(1, filteredHistoryItems.length);
+      renderHistoryModal();
+      e.preventDefault();
+    } else if (e.key === 'ArrowUp') {
+      historyModalIdx = (historyModalIdx - 1 + filteredHistoryItems.length) % Math.max(1, filteredHistoryItems.length);
+      renderHistoryModal();
+      e.preventDefault();
+    } else if (e.key === 'Enter') {
+      if (filteredHistoryItems[historyModalIdx]) {
+        const cmd = filteredHistoryItems[historyModalIdx];
+        closeHistorySearchModal();
+        sendToActive(cmd);
+      }
+      e.preventDefault();
+    }
+  };
+
+  historyModalEl.onclick = function(e) {
+    if (e.target === historyModalEl) closeHistorySearchModal();
   };
 
   let sidebarCollapsed = true;
@@ -2819,41 +3034,91 @@
   function clearActive(){ if(activePane) activePane.term.clear(); }
   function copyActive(){ if(activePane){ const s=activePane.term.getSelection(); if(s) navigator.clipboard.writeText(s).catch(function(){}); } }
 
-  async function pasteActive(){
+  function pasteActive() {
     if (!activePane) return;
     const pane = activePane;
 
-    try {
-
-      const text = await navigator.clipboard.readText();
-      if (text) {
-        pane.term.paste(text);
+    if (pane.term) {
+      try { pane.term.focus(); } catch (_) {}
+      if (pane.term.textarea) {
+        try { pane.term.textarea.focus(); } catch (_) {}
       }
-    } catch (err) {
-
-      const handler = function(e) {
-        document.removeEventListener('paste', handler, true);
-        const text = e.clipboardData ? e.clipboardData.getData('text/plain') : '';
-        if (text) pane.term.paste(text);
-        e.preventDefault();
-        e.stopPropagation();
-      };
-      document.addEventListener('paste', handler, true);
-
-      const tempInput = document.createElement('textarea');
-      tempInput.style.position = 'fixed';
-      tempInput.style.opacity = '0';
-      document.body.appendChild(tempInput);
-      tempInput.focus();
-      document.execCommand('paste');
-      setTimeout(() => {
-        if (tempInput.value) {
-          pane.term.paste(tempInput.value);
-        }
-        document.body.removeChild(tempInput);
-        pane.term.focus();
-      }, 50);
     }
+
+    fetch('/clipboard/read')
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.text && pane) {
+          if (pane.send) {
+            pane.send({ t: 'i', d: d.text });
+          } else if (pane.term) {
+            pane.term.paste(d.text);
+          }
+          return;
+        }
+        tryWebClipboardAPI(pane);
+      })
+      .catch(() => {
+        tryWebClipboardAPI(pane);
+      });
+  }
+
+  function tryWebClipboardAPI(pane) {
+    if (navigator.clipboard && navigator.clipboard.readText) {
+      navigator.clipboard.readText().then(text => {
+        if (text && pane) {
+          if (pane.send) {
+            pane.send({ t: 'i', d: text });
+          } else if (pane.term) {
+            pane.term.paste(text);
+          }
+        }
+      }).catch(err => {
+        console.warn("navigator.clipboard.readText failed:", err);
+        fallbackClipboardPaste(pane);
+      });
+    } else {
+      fallbackClipboardPaste(pane);
+    }
+  }
+
+  function fallbackClipboardPaste(pane) {
+    const input = document.createElement('textarea');
+    input.style.cssText = 'position:fixed;left:-9999px;top:-9999px;width:1px;height:1px;opacity:0.01;z-index:99999;';
+    document.body.appendChild(input);
+    input.focus();
+    input.select();
+
+    const onPaste = function(e) {
+      document.removeEventListener('paste', onPaste, true);
+      const clipData = e.clipboardData || window.clipboardData;
+      const text = clipData ? (clipData.getData('text/plain') || clipData.getData('text')) : '';
+      if (text && pane) {
+        if (pane.send) {
+          pane.send({ t: 'i', d: text });
+        } else if (pane.term) {
+          pane.term.paste(text);
+        }
+      }
+      e.preventDefault();
+      e.stopPropagation();
+    };
+
+    document.addEventListener('paste', onPaste, true);
+
+    try {
+      document.execCommand('paste');
+    } catch (_) {}
+
+    setTimeout(() => {
+      document.removeEventListener('paste', onPaste, true);
+      if (input.value && pane) {
+        if (pane.send) pane.send({ t: 'i', d: input.value });
+        else if (pane.term) pane.term.paste(input.value);
+      }
+      if (input.parentNode) input.parentNode.removeChild(input);
+      if (pane.term) pane.term.focus();
+    }, 80);
   }
   function toggleBroadcast(){ broadcastOn=!broadcastOn; updateFooter(); }
   function duplicateTab(){ newTab(null, activePane?activePane.cwd:''); }
@@ -3030,9 +3295,37 @@
       }
       return true;
     }
+    if (quickOpenActive) {
+      if (e.key === 'Escape') {
+        closeQuickOpen();
+        return false;
+      }
+      return true;
+    }
+    if (historyModalActive) {
+      if (e.key === 'Escape') {
+        closeHistorySearchModal();
+        return false;
+      }
+      return true;
+    }
 
     if ((e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'p') || e.key === 'F1') {
+      e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
       openPalette();
+      return false;
+    }
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p') {
+      e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
+      openQuickOpen();
+      return false;
+    }
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'r') {
+      e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
+      openHistorySearchModal();
       return false;
     }
 
@@ -3245,7 +3538,12 @@
       this.fit=new FitAddon.FitAddon(); this.term.loadAddon(this.fit);
       this.el.addEventListener('mousedown',()=>setActive(this));
       const self=this;
-      this.el.addEventListener('contextmenu',function(e){ e.preventDefault(); setActive(self); showCtxMenu(self, e.clientX, e.clientY); });
+      this.host.addEventListener('contextmenu', function(e) {
+        e.preventDefault();
+        if (e.stopPropagation) e.stopPropagation();
+        setActive(self);
+        showCtxMenu(self, e.clientX, e.clientY);
+      }, true);
 
       this.host.addEventListener('dragover', function(e) {
         e.preventDefault();
@@ -3264,6 +3562,15 @@
       this.term.open(this.host);
       this.term.attachCustomKeyEventHandler(keyHandler);
       const self=this;
+
+      if (this.term.element) {
+        this.term.element.addEventListener('contextmenu', function(e) {
+          e.preventDefault();
+          if (e.stopPropagation) e.stopPropagation();
+          setActive(self);
+          showCtxMenu(self, e.clientX, e.clientY);
+        }, true);
+      }
       this.term.onKey(e => {
         if (e.key === '\r') {
           const buffer = self.term.buffer.active;
@@ -3609,7 +3916,7 @@
       if(it[0]==='sep'){ const s=document.createElement('div'); s.className='sep'; menu.appendChild(s); return; }
       const mi=document.createElement('div'); mi.className='mi';
       const lab=document.createElement('span'); lab.textContent=it[0]; mi.appendChild(lab);
-      mi.addEventListener('click',function(e){ e.stopPropagation(); closeCtxMenu(); it[1](); });
+      mi.addEventListener('click',function(e){ e.stopPropagation(); const fn = it[1]; fn(); closeCtxMenu(); });
       menu.appendChild(mi);
     });
     document.body.appendChild(menu);
@@ -4489,6 +4796,51 @@
       openViewTab({ type: 'edit', file: e.data.file, name: e.data.file.split(/[\\/]/).pop() });
     }
   });
+
+  window.addEventListener('keydown', function(e) {
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'p') {
+      e.preventDefault();
+      e.stopPropagation();
+      openQuickOpen();
+    } else if (e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'r') {
+      e.preventDefault();
+      e.stopPropagation();
+      openHistorySearchModal();
+    } else if ((e.ctrlKey && e.shiftKey && e.key.toLowerCase() === 'p') || e.key === 'F1') {
+      e.preventDefault();
+      e.stopPropagation();
+      openPalette();
+    }
+  }, true);
+
+  document.addEventListener('contextmenu', function(e) {
+    const paneEl = e.target.closest('.pane');
+    if (!paneEl) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+
+    let targetPane = null;
+    tabs.forEach(t => {
+      if (t.panes) {
+        t.panes.forEach(p => {
+          if (p.el === paneEl || p.el.contains(e.target)) {
+            targetPane = p;
+          }
+        });
+      }
+    });
+
+    if (!targetPane && activePane) {
+      targetPane = activePane;
+    }
+
+    if (targetPane) {
+      setActive(targetPane);
+      showCtxMenu(targetPane, e.clientX, e.clientY);
+    }
+  }, true);
 
   buildMenus();
   connectControl();
