@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package
+    Name="Invoke System Service"
+    Manufacturer="Invoke"
+    Version="1.0.0.0"
+    UpgradeCode="5B7E1F2A-3C6D-4E8F-9A0B-1D2E3F4A5B6D"
+    Scope="perMachine"
+    Compressed="yes">
+    
+    <MediaTemplate EmbedCab="yes" />
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." Schedule="afterInstallInitialize" />
+
+    <Property Id="SERVICEPORT" Value="30088" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="Invoke service installed successfully. You can access it at http://localhost:[SERVICEPORT]/ (Remember to configure your Network Password to allow remote connections!)" />
+
+    <UI Id="CustomUI">
+      <UIRef Id="WixUI_Common" />
+      <UIRef Id="WixUI_ErrorProgressText" />
+
+      <Dialog Id="PortDlg" Width="370" Height="270" Title="Configure Service">
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" />
+        </Control>
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="WelcomeDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+        
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Configure Service Port" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Enter the port for the Invoke remote terminal service." />
+        
+        <Control Id="PortLabel" Type="Text" X="20" Y="60" Width="100" Height="15" Text="Service Port:" />
+        <Control Id="PortEdit" Type="Edit" X="20" Y="75" Width="100" Height="18" Property="SERVICEPORT" />
+      </Dialog>
+
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="PortDlg" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="PortDlg" />
+      <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" />
+      <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
+    </UI>
+
+    <StandardDirectory Id="ProgramFiles64Folder">
+      <Directory Id="InvokeCompanyFolder" Name="Invoke">
+        <Directory Id="INSTALLFOLDER" Name="Invoke Server" />
+      </Directory>
+    </StandardDirectory>
+
+    <Feature Id="ProductFeature" Title="Invoke Service" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      
+      <Component Id="InvokeServerService" Guid="*">
+        <File Id="invoke_server_exe" Name="invoke-server.exe" Source="build\invoke-server.exe" KeyPath="yes" />
+        <ServiceInstall
+          Id="ServiceInstaller"
+          Type="ownProcess"
+          Name="InvokeService"
+          DisplayName="Invoke Remote Terminal Service"
+          Description="Browser-based remote terminal service."
+          Start="auto"
+          Account="LocalSystem"
+          ErrorControl="normal" />
+        <ServiceControl Id="StartService" Start="install" Stop="both" Remove="uninstall" Name="InvokeService" Wait="yes" />
+        <RegistryValue Root="HKLM" Key="Software\Invoke" Name="ServerPort" Type="string" Value="[SERVICEPORT]" />
+      </Component>
+
+      <Component Id="InvokeScriptSystem" Guid="*">
+        <File Id="invoke_ps1" Name="invoke.ps1" Source="build\invoke.ps1" KeyPath="yes" />
+      </Component>
+
+    </ComponentGroup>
+  </Fragment>
+</Wix>

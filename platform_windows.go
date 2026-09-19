@@ -18,6 +18,33 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func authenticateWindowsUser(username, password string) bool {
+	if username == "" || password == "" {
+		return false
+	}
+	advapi32 := windows.NewLazySystemDLL("advapi32.dll")
+	logonUser := advapi32.NewProc("LogonUserW")
+
+	var token syscall.Handle
+	userPtr, _ := windows.UTF16PtrFromString(username)
+	passPtr, _ := windows.UTF16PtrFromString(password)
+
+	r1, _, _ := logonUser.Call(
+		uintptr(unsafe.Pointer(userPtr)),
+		0,
+		uintptr(unsafe.Pointer(passPtr)),
+		3,
+		0,
+		uintptr(unsafe.Pointer(&token)),
+	)
+
+	if r1 != 0 {
+		syscall.CloseHandle(token)
+		return true
+	}
+	return false
+}
+
 type PortInfo struct {
 	Port        int    `json:"Port"`
 	PID         int    `json:"PID"`

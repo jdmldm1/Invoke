@@ -212,14 +212,17 @@ func serveRemoteLoginPage(w http.ResponseWriter, errMsg string) {
 <style>
 body{background:#141414;color:#e2e2e2;font-family:Segoe UI,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
 form{background:#1c1c1c;padding:32px;border-radius:8px;min-width:280px;border:1px solid #2a2a2a}
-h1{font-size:16px;margin:0 0 16px;font-weight:600}
+h1{font-size:16px;margin:0 0 8px;font-weight:600}
+p.sub{font-size:12px;color:#888;margin:0 0 16px}
 input{width:100%%;padding:9px;margin-bottom:12px;background:#141414;border:1px solid #333;color:#e2e2e2;border-radius:4px;box-sizing:border-box;font-size:14px}
 button{width:100%%;padding:9px;background:#0ea5e9;border:none;color:#fff;border-radius:4px;cursor:pointer;font-size:14px}
 </style></head><body>
 <form method="POST" action="/remote-login">
 <h1>Invoke &mdash; Remote Access</h1>
+<p class="sub">Enter your Windows credentials</p>
 %s
-<input type="password" name="password" placeholder="Password" autofocus>
+<input type="text" name="username" placeholder="Username" autofocus>
+<input type="password" name="password" placeholder="Password">
 <button type="submit">Unlock</button>
 </form></body></html>`, errHTML)
 }
@@ -233,10 +236,11 @@ func handleRemoteLogin(w http.ResponseWriter, r *http.Request) {
 		serveRemoteLoginPage(w, "Bad request")
 		return
 	}
+	username := r.FormValue("username")
 	password := r.FormValue("password")
-	config := loadConfig()
-	if !checkPassword(password, config.NetworkPasswordSalt, config.NetworkPasswordHash) {
-		serveRemoteLoginPage(w, "Incorrect password")
+
+	if !authenticateWindowsUser(username, password) {
+		serveRemoteLoginPage(w, "Incorrect Windows credentials")
 		return
 	}
 	token := createSession()
@@ -387,7 +391,7 @@ func shellCommandLine() string {
 	} else if p, err := exec.LookPath("pwsh"); err == nil {
 		shell = p
 	}
-	return fmt.Sprintf(`"%s" -NoLogo -NoExit -Command "%s"`, shell, initCmd)
+	return fmt.Sprintf(`"%s" -ExecutionPolicy Bypass -NoLogo -NoExit -Command "%s"`, shell, initCmd)
 }
 
 func atoiDefault(s string, def int) int {
@@ -936,6 +940,9 @@ func serveTerminalWindow() {
 	mux.HandleFunc("/clipboard/read", handleClipboardRead)
 
 	go func() {
+		if os.Getenv("INVOKE_NO_WINDOW") != "" {
+			return
+		}
 		zero := 0
 		for {
 			time.Sleep(2 * time.Second)
@@ -1362,4 +1369,3 @@ func handleWorkspaceSave(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = json.NewEncoder(w).Encode(map[string]any{"success": true})
 }
-
