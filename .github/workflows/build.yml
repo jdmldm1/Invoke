@@ -44,9 +44,9 @@ jobs:
           CGO_ENABLED: 0
         run: go build -v -ldflags "-H windowsgui" -o build/invoke-app.exe .\cmd\invoke-app\
 
-      - name: Install WiX Toolset v4
+      - name: Install WiX Toolset
         run: |
-          dotnet tool install --global wix --version 4.0.5
+          dotnet tool install --global wix
           wix extension add WixToolset.UI.wixext
           wix extension add WixToolset.Firewall.wixext
 
