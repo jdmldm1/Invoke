@@ -1,0 +1,13 @@
+[Unit]
+Description=Invoke Server
+After=network.target
+
+[Service]
+ExecStart=/usr/bin/invoke-server
+Restart=always
+User=root
+Environment="INVOKE_HOST=localhost"
+Environment="INVOKE_PORT=8080"
+
+[Install]
+WantedBy=multi-user.target
