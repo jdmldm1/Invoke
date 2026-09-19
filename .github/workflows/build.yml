@@ -58,17 +58,22 @@ jobs:
 
       # ── Install WiX v4 toolset ─────────────────────────────────────────────
       - name: Install WiX Toolset v4
-        run: dotnet tool install --global wix --version 4.0.5
+        run: |
+          dotnet tool install --global wix --version 4.0.5
+          wix extension add WixToolset.UI.wixext
 
       - name: Copy invoke.ps1
         run: Copy-Item invoke.ps1 build\invoke.ps1
 
-      # ── Build per-user MSI (no admin required) ────────────────────────────
-      - name: Build MSI Installer
+      # ── Build MSI Installers ────────────────────────────
+      - name: Build MSI Installers
         run: |
           wix build installer/invoke.wxs `
             -arch x64 `
             -o build/invoke-setup.msi
+          wix build -ext WixToolset.UI.wixext installer/invoke-system.wxs `
+            -arch x64 `
+            -o build/invoke-system-setup.msi
 
       # ── Upload artifacts for every run ───────────────────────────────────
       - name: Upload Artifacts
@@ -79,6 +84,7 @@ jobs:
             build/invoke-app.exe
             build/invoke-server.exe
             build/invoke-setup.msi
+            build/invoke-system-setup.msi
 
       # ── Publish versioned release on tag push ─────────────────────────────
       - name: Publish Versioned Release
@@ -87,6 +93,7 @@ jobs:
         with:
           files: |
             build/invoke-setup.msi
+            build/invoke-system-setup.msi
             build/invoke-app.exe
             build/invoke-server.exe
         env:
@@ -104,10 +111,12 @@ jobs:
 
             Commit: ${{ github.sha }}
 
-            **Install:** Download `invoke-setup.msi` — no administrator rights required.
+            **Install (Per-user):** Download `invoke-setup.msi` — no administrator rights required.
+            **Install (Service):** Download `invoke-system-setup.msi` — installs a system-wide background service (requires Administrator).
           prerelease: true
           files: |
             build/invoke-setup.msi
+            build/invoke-system-setup.msi
             build/invoke-app.exe
             build/invoke-server.exe
         env:

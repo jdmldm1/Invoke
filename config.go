@@ -8,9 +8,12 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/sys/windows/registry"
 )
 
 type Snippet struct {
@@ -155,6 +158,22 @@ func loadConfig() ConfigData {
 			"kgp":  "kubectl get pods",
 			"ptp":  "Get-NetTCPConnection -State Listen",
 		},
+	}
+
+	if k, err := registry.OpenKey(registry.LOCAL_MACHINE, `Software\Invoke`, registry.READ); err == nil {
+		if portStr, _, err := k.GetStringValue("ServerPort"); err == nil {
+			if port, err := strconv.Atoi(portStr); err == nil && port > 0 {
+				defaultConfig.ServerPort = port
+				defaultConfig.NetworkAccess = true
+			}
+		}
+		if hash, _, err := k.GetStringValue("NetworkPasswordHash"); err == nil && hash != "" {
+			defaultConfig.NetworkPasswordHash = hash
+		}
+		if salt, _, err := k.GetStringValue("NetworkPasswordSalt"); err == nil && salt != "" {
+			defaultConfig.NetworkPasswordSalt = salt
+		}
+		k.Close()
 	}
 
 	file, err := os.Open(configPath)
@@ -474,4 +493,3 @@ func saveWorkspaceConfig(dir string, cfg WorkspaceConfig) error {
 	}
 	return os.WriteFile(wsPath, data, 0644)
 }
-

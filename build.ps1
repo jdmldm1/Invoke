@@ -82,14 +82,17 @@ if (-not $SkipMSI) {
 
         Push-Location $ProjectRoot
         try {
-            Write-Host "  Running WiX compiler..." -ForegroundColor Gray
+            Write-Host "  Running WiX compiler for invoke-setup.msi..." -ForegroundColor Gray
             & wix build -arch x64 -o $MsiOutput $WxsFile
-
-            if ($LASTEXITCODE -ne 0) {
-                throw "WiX build failed"
-            }
-
+            if ($LASTEXITCODE -ne 0) { throw "WiX build failed for invoke-setup.msi" }
             Write-Host "[OK] MSI installer created: $MsiOutput" -ForegroundColor Green
+
+            $SysWxsFile = Join-Path $InstallerDir "invoke-system.wxs"
+            $SysMsiOutput = Join-Path $BuildDir "invoke-system-setup.msi"
+            Write-Host "  Running WiX compiler for invoke-system-setup.msi..." -ForegroundColor Gray
+            & wix build -ext WixToolset.UI.wixext -arch x64 -o $SysMsiOutput $SysWxsFile
+            if ($LASTEXITCODE -ne 0) { throw "WiX build failed for invoke-system-setup.msi" }
+            Write-Host "[OK] System MSI installer created: $SysMsiOutput" -ForegroundColor Green
         } finally {
             Pop-Location
         }

@@ -13,9 +13,16 @@ import (
 	"time"
 
 	"github.com/charmbracelet/lipgloss"
+	"golang.org/x/sys/windows/svc"
 )
 
 func main() {
+	isInteractive, err := svc.IsAnInteractiveSession()
+	if err == nil && !isInteractive {
+		runService("InvokeService", false)
+		return
+	}
+
 	initConfig()
 	initLayouts()
 
@@ -95,6 +102,22 @@ func main() {
 		getHoverInfo(os.Args[2])
 	case "wsl":
 		runWSLMode()
+	case "install-service":
+		err := installService("InvokeService", "Invoke Remote Terminal Service")
+		if err != nil {
+			fmt.Printf("Failed to install service: %v\n", err)
+		} else {
+			fmt.Println("Service installed successfully.")
+		}
+	case "uninstall-service":
+		err := removeService("InvokeService")
+		if err != nil {
+			fmt.Printf("Failed to remove service: %v\n", err)
+		} else {
+			fmt.Println("Service removed successfully.")
+		}
+	case "service":
+		runService("InvokeService", true)
 	default:
 		fmt.Printf("Unknown command: %s\nRun 'pt help' to see available commands.\n", command)
 	}
@@ -141,7 +164,7 @@ func runTerminalMode() {
 		shell = p
 	}
 
-	cmd := exec.Command(shell, "-NoExit", "-NoLogo", "-Command", initCmd)
+	cmd := exec.Command(shell, "-ExecutionPolicy", "Bypass", "-NoExit", "-NoLogo", "-Command", initCmd)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
