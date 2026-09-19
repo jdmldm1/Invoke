@@ -90,7 +90,7 @@ if (-not $SkipMSI) {
             $SysWxsFile = Join-Path $InstallerDir "invoke-system.wxs"
             $SysMsiOutput = Join-Path $BuildDir "invoke-system-setup.msi"
             Write-Host "  Running WiX compiler for invoke-system-setup.msi..." -ForegroundColor Gray
-            & wix build -ext WixToolset.UI.wixext -arch x64 -o $SysMsiOutput $SysWxsFile
+            & wix build -ext WixToolset.UI.wixext -ext WixToolset.Firewall.wixext -arch x64 -o $SysMsiOutput $SysWxsFile
             if ($LASTEXITCODE -ne 0) { throw "WiX build failed for invoke-system-setup.msi" }
             Write-Host "[OK] System MSI installer created: $SysMsiOutput" -ForegroundColor Green
         } finally {
