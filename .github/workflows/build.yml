@@ -96,7 +96,7 @@ jobs:
 
       - name: Publish Latest Dev Release
         if: github.ref == 'refs/heads/master' || github.ref == 'refs/heads/main'
-        uses: softprops/action-gh-release@c062e08bd532815e2082a85e875156d11f79f228
+        uses: softprops/action-gh-release@v2
         with:
           tag_name: latest
           name: Latest Development Build
