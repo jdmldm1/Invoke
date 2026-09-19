@@ -5,8 +5,10 @@ go 1.26.4
 require (
 	github.com/UserExistsError/conpty v0.1.4
 	github.com/charmbracelet/lipgloss v1.1.0
+	github.com/creack/pty v1.1.24
 	github.com/gorilla/websocket v1.5.3
 	github.com/jchv/go-webview2 v0.0.0-20260205173254-56598839c808
+	github.com/zserge/lorca v0.1.10
 	golang.org/x/sys v0.46.0
 )
 
@@ -26,4 +28,5 @@ require (
 	github.com/muesli/termenv v0.16.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	golang.org/x/net v0.0.0-20200222125558-5a598a2470a0 // indirect
 )

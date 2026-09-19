@@ -1,10 +1,33 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 )
 
+func withTempSSHKey(t *testing.T) {
+	t.Helper()
+	tempDir, err := os.MkdirTemp("", "invoke_sshkey_test_*")
+	if err != nil {
+		t.Fatalf("failed to create temp dir: %v", err)
+	}
+
+	oldPath := sshKeyPath
+	oldKey := sshMachineKeyData
+	sshKeyPath = filepath.Join(tempDir, ".invoke_sshkey_test")
+	sshMachineKeyData = nil
+
+	t.Cleanup(func() {
+		sshKeyPath = oldPath
+		sshMachineKeyData = oldKey
+		os.RemoveAll(tempDir)
+	})
+}
+
 func TestSSHPasswordEncryptionDecryption(t *testing.T) {
+	withTempSSHKey(t)
+
 	plain := "SecretP@ssw0rd!2026"
 	encrypted := encryptSSHPassword(plain)
 
@@ -22,24 +45,10 @@ func TestSSHPasswordEncryptionDecryption(t *testing.T) {
 }
 
 func TestSSHPasswordDecryptInvalid(t *testing.T) {
+	withTempSSHKey(t)
+
 	dec := decryptSSHPassword("invalid-base64-string!")
 	if dec != "" {
 		t.Errorf("expected empty string for invalid ciphertext, got '%s'", dec)
-	}
-}
-
-func TestItoaHelper(t *testing.T) {
-	tests := map[int]string{
-		0:    "0",
-		22:   "22",
-		8080: "8080",
-		-42:  "-42",
-	}
-
-	for input, expected := range tests {
-		got := itoa(input)
-		if got != expected {
-			t.Errorf("itoa(%d) = %s; expected %s", input, got, expected)
-		}
 	}
 }

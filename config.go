@@ -8,12 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	"golang.org/x/sys/windows/registry"
 )
 
 type Snippet struct {
@@ -160,21 +157,7 @@ func loadConfig() ConfigData {
 		},
 	}
 
-	if k, err := registry.OpenKey(registry.LOCAL_MACHINE, `Software\Invoke`, registry.READ); err == nil {
-		if portStr, _, err := k.GetStringValue("ServerPort"); err == nil {
-			if port, err := strconv.Atoi(portStr); err == nil && port > 0 {
-				defaultConfig.ServerPort = port
-				defaultConfig.NetworkAccess = true
-			}
-		}
-		if hash, _, err := k.GetStringValue("NetworkPasswordHash"); err == nil && hash != "" {
-			defaultConfig.NetworkPasswordHash = hash
-		}
-		if salt, _, err := k.GetStringValue("NetworkPasswordSalt"); err == nil && salt != "" {
-			defaultConfig.NetworkPasswordSalt = salt
-		}
-		k.Close()
-	}
+	applySystemConfig(&defaultConfig)
 
 	file, err := os.Open(configPath)
 	if err != nil {
@@ -333,6 +316,82 @@ func deletePrompt(index int) {
 	}
 	config.Prompts = append(config.Prompts[:index], config.Prompts[index+1:]...)
 	saveConfig(config)
+}
+
+func handleConfig(w http.ResponseWriter, r *http.Request) {
+	if r.Method == http.MethodGet {
+		config := loadConfig()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(config)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var config ConfigData
+		if json.NewDecoder(r.Body).Decode(&config) != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		saveConfig(config)
+		w.WriteHeader(200)
+		return
+	}
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func handlePrompts(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	if r.Method == http.MethodGet {
+		config := loadConfig()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(config.Prompts)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		var req struct {
+			Name     string `json:"name"`
+			Template string `json:"template"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		addPrompt(req.Name, req.Template)
+		w.WriteHeader(200)
+		return
+	}
+
+	if r.Method == http.MethodDelete {
+		var req struct {
+			Index int `json:"index"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", 400)
+			return
+		}
+		deletePrompt(req.Index)
+		w.WriteHeader(200)
+		return
+	}
+
+	http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+}
+
+func handleSnippetAdd(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	var snippet Snippet
+	if json.NewDecoder(r.Body).Decode(&snippet) != nil {
+		http.Error(w, "bad request", 400)
+		return
+	}
+	config := loadConfig()
+	config.Snippets = append(config.Snippets, snippet)
+	saveConfig(config)
+	w.WriteHeader(200)
 }
 
 func loadLayouts() []Layout {

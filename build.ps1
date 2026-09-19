@@ -53,13 +53,18 @@ try {
     Pop-Location
 }
 
-Write-Host "Copying invoke.ps1 to build directory..." -ForegroundColor Yellow
-$InvokeScript = Join-Path $ProjectRoot "invoke.ps1"
-if (Test-Path $InvokeScript) {
-    Copy-Item $InvokeScript -Destination $BuildDir -Force
+Write-Host "Copying scripts to build directory..." -ForegroundColor Yellow
+$InvokeScriptPS = Join-Path $ProjectRoot "invoke.ps1"
+$InvokeScriptSH = Join-Path $ProjectRoot "invoke.sh"
+if (Test-Path $InvokeScriptPS) {
+    Copy-Item $InvokeScriptPS -Destination $BuildDir -Force
     Write-Host "[OK] invoke.ps1 copied" -ForegroundColor Green
+}
+if (Test-Path $InvokeScriptSH) {
+    Copy-Item $InvokeScriptSH -Destination $BuildDir -Force
+    Write-Host "[OK] invoke.sh copied" -ForegroundColor Green
 } else {
-    Write-Host "[WARN] invoke.ps1 not found, skipping" -ForegroundColor Yellow
+    Write-Host "[WARN] scripts not found, skipping" -ForegroundColor Yellow
 }
 
 if (-not $SkipMSI) {
@@ -74,7 +79,7 @@ if (-not $SkipMSI) {
     } else {
         $WxsFile = Join-Path $InstallerDir "invoke.wxs"
         $WixObjDir = Join-Path $BuildDir "wixobj"
-        $MsiOutput = Join-Path $BuildDir "invoke-setup.msi"
+        $MsiOutput = Join-Path $BuildDir "invoke-desktop-windows-x86.msi"
 
         if (-not (Test-Path $WixObjDir)) {
             New-Item -Path $WixObjDir -ItemType Directory -Force | Out-Null
@@ -82,16 +87,16 @@ if (-not $SkipMSI) {
 
         Push-Location $ProjectRoot
         try {
-            Write-Host "  Running WiX compiler for invoke-setup.msi..." -ForegroundColor Gray
+            Write-Host "  Running WiX compiler for invoke-desktop-windows-x86.msi..." -ForegroundColor Gray
             & wix build -arch x64 -o $MsiOutput $WxsFile
-            if ($LASTEXITCODE -ne 0) { throw "WiX build failed for invoke-setup.msi" }
+            if ($LASTEXITCODE -ne 0) { throw "WiX build failed for invoke-desktop-windows-x86.msi" }
             Write-Host "[OK] MSI installer created: $MsiOutput" -ForegroundColor Green
 
             $SysWxsFile = Join-Path $InstallerDir "invoke-system.wxs"
-            $SysMsiOutput = Join-Path $BuildDir "invoke-system-setup.msi"
-            Write-Host "  Running WiX compiler for invoke-system-setup.msi..." -ForegroundColor Gray
+            $SysMsiOutput = Join-Path $BuildDir "invoke-server-windows-x86.msi"
+            Write-Host "  Running WiX compiler for invoke-server-windows-x86.msi..." -ForegroundColor Gray
             & wix build -ext WixToolset.UI.wixext -ext WixToolset.Firewall.wixext -arch x64 -o $SysMsiOutput $SysWxsFile
-            if ($LASTEXITCODE -ne 0) { throw "WiX build failed for invoke-system-setup.msi" }
+            if ($LASTEXITCODE -ne 0) { throw "WiX build failed for invoke-server-windows-x86.msi" }
             Write-Host "[OK] System MSI installer created: $SysMsiOutput" -ForegroundColor Green
         } finally {
             Pop-Location
