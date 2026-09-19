@@ -13,26 +13,31 @@ import (
 )
 
 func main() {
+	// If started without arguments, check if we're running as a Windows Service
+	if len(os.Args) < 2 {
+		if checkServiceAndRun() {
+			return
+		}
+	} else if len(os.Args) >= 4 && os.Args[3] == "--system" {
+		// MSI installer custom actions pass --system to indicate a system-wide install
+		os.Setenv("INVOKE_SYSTEM", "1")
+	}
+
 	initConfig()
 	initLayouts()
 
-	// Handle explicit commands before checking for implicit service execution
+	// Handle explicit commands
 	if len(os.Args) > 1 {
 		command := os.Args[1]
 		if command == "set-network-password" {
 			if len(os.Args) < 3 {
-				fmt.Println("Usage: invoke-server set-network-password <password>")
+				fmt.Println("Usage: invoke-server set-network-password <password> [--system]")
 				return
 			}
 			setNetworkPasswordCLI(os.Args[2])
 			return
 		}
 		// Let other commands fall through to the switch statement below
-	}
-
-	// Implicitly run as a Windows Service if started non-interactively without args
-	if len(os.Args) < 2 && checkServiceAndRun() {
-		return
 	}
 
 	if len(os.Args) < 2 {

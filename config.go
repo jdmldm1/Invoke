@@ -65,9 +65,19 @@ var (
 )
 
 func initConfig() {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
+	var home string
+	if os.Getenv("INVOKE_SYSTEM") == "1" {
+		home = os.Getenv("PROGRAMDATA")
+		if home == "" {
+			home = `C:\ProgramData`
+		}
+		home = filepath.Join(home, "Invoke")
+	} else {
+		var err error
+		home, err = os.UserHomeDir()
+		if err != nil {
+			home = "."
+		}
 	}
 	configPath = filepath.Join(home, ".invoke.json")
 
@@ -86,9 +96,19 @@ func initConfig() {
 }
 
 func initLayouts() {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		home = "."
+	var home string
+	if os.Getenv("INVOKE_SYSTEM") == "1" {
+		home = os.Getenv("PROGRAMDATA")
+		if home == "" {
+			home = `C:\ProgramData`
+		}
+		home = filepath.Join(home, "Invoke")
+	} else {
+		var err error
+		home, err = os.UserHomeDir()
+		if err != nil {
+			home = "."
+		}
 	}
 	layoutPath = filepath.Join(home, ".invoke_layouts.json")
 

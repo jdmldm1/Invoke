@@ -15,6 +15,7 @@ var elog debug.Log
 func checkServiceAndRun() bool {
 	isInteractive, err := svc.IsAnInteractiveSession()
 	if err == nil && !isInteractive {
+		os.Setenv("INVOKE_SYSTEM", "1")
 		runService("InvokeService", false)
 		return true
 	}
