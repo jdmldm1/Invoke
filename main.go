@@ -13,12 +13,27 @@ import (
 )
 
 func main() {
-	if checkServiceAndRun() {
-		return
-	}
-
 	initConfig()
 	initLayouts()
+
+	// Handle explicit commands before checking for implicit service execution
+	if len(os.Args) > 1 {
+		command := os.Args[1]
+		if command == "set-network-password" {
+			if len(os.Args) < 3 {
+				fmt.Println("Usage: invoke-server set-network-password <password>")
+				return
+			}
+			setNetworkPasswordCLI(os.Args[2])
+			return
+		}
+		// Let other commands fall through to the switch statement below
+	}
+
+	// Implicitly run as a Windows Service if started non-interactively without args
+	if len(os.Args) < 2 && checkServiceAndRun() {
+		return
+	}
 
 	if len(os.Args) < 2 {
 		launchDefaultWindow()
@@ -112,12 +127,6 @@ func main() {
 		}
 	case "service":
 		runService("InvokeService", true)
-	case "set-network-password":
-		if len(os.Args) < 3 {
-			fmt.Println("Usage: pt set-network-password <password>")
-			return
-		}
-		setNetworkPasswordCLI(os.Args[2])
 	default:
 		fmt.Printf("Unknown command: %s\nRun 'pt help' to see available commands.\n", command)
 	}
