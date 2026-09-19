@@ -14,7 +14,7 @@
 
     <Property Id="SERVICEPORT" Value="30088" />
     <Property Id="NETWORKPASSWORD" Secure="yes" Hidden="yes" />
-    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="Invoke service installed successfully. You can access it at http://localhost:[SERVICEPORT]/" />
+    <SetProperty Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="Invoke service installed successfully. You can access it at http://localhost:[SERVICEPORT]/" After="CostFinalize" />
 
     <UI Id="CustomUI">
       <UIRef Id="WixUI_Common" />
@@ -63,6 +63,7 @@
       <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
     </UI>
 
+    <Property Id="SetNetworkPassword" Hidden="yes" />
     <CustomAction Id="SetNetworkPasswordData" Property="SetNetworkPassword" Value="[NETWORKPASSWORD]" />
     <CustomAction Id="SetNetworkPassword"
                   FileRef="invoke_server_exe"

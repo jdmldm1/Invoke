@@ -32,7 +32,7 @@ Push-Location (Join-Path $ProjectRoot "cmd\invoke-app")
 $env:GOOS = "windows"
 $env:GOARCH = "amd64"
 try {
-    go build -ldflags "-H windowsgui" -o (Join-Path $BuildDir "invoke-app.exe") .
+    go build -ldflags "-s -w -H windowsgui" -o (Join-Path $BuildDir "invoke-app.exe") .
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to build invoke-app.exe"
     }
@@ -44,7 +44,7 @@ try {
 Write-Host "Building invoke-server.exe (invoke)..." -ForegroundColor Yellow
 Push-Location $ProjectRoot
 try {
-    go build -ldflags "-H windowsgui" -o (Join-Path $BuildDir "invoke-server.exe") .
+    go build -ldflags "-s -w -H windowsgui" -o (Join-Path $BuildDir "invoke-server.exe") .
     if ($LASTEXITCODE -ne 0) {
         throw "Failed to build invoke-server.exe"
     }
@@ -79,7 +79,7 @@ if (-not $SkipMSI) {
     } else {
         $WxsFile = Join-Path $InstallerDir "invoke.wxs"
         $WixObjDir = Join-Path $BuildDir "wixobj"
-        $MsiOutput = Join-Path $BuildDir "invoke-desktop-windows-x86.msi"
+        $MsiOutput = Join-Path $BuildDir "invoke-desktop-windows-amd64.msi"
 
         if (-not (Test-Path $WixObjDir)) {
             New-Item -Path $WixObjDir -ItemType Directory -Force | Out-Null
@@ -87,22 +87,26 @@ if (-not $SkipMSI) {
 
         Push-Location $ProjectRoot
         try {
-            Write-Host "  Running WiX compiler for invoke-desktop-windows-x86.msi..." -ForegroundColor Gray
+            Write-Host "  Running WiX compiler for invoke-desktop-windows-amd64.msi..." -ForegroundColor Gray
             & wix build -arch x64 -o $MsiOutput $WxsFile
-            if ($LASTEXITCODE -ne 0) { throw "WiX build failed for invoke-desktop-windows-x86.msi" }
+            if ($LASTEXITCODE -ne 0) { throw "WiX build failed for invoke-desktop-windows-amd64.msi" }
             Write-Host "[OK] MSI installer created: $MsiOutput" -ForegroundColor Green
 
             $SysWxsFile = Join-Path $InstallerDir "invoke-system.wxs"
-            $SysMsiOutput = Join-Path $BuildDir "invoke-server-windows-x86.msi"
-            Write-Host "  Running WiX compiler for invoke-server-windows-x86.msi..." -ForegroundColor Gray
+            $SysMsiOutput = Join-Path $BuildDir "invoke-server-windows-amd64.msi"
+            Write-Host "  Running WiX compiler for invoke-server-windows-amd64.msi..." -ForegroundColor Gray
             & wix build -ext WixToolset.UI.wixext -ext WixToolset.Firewall.wixext -arch x64 -o $SysMsiOutput $SysWxsFile
-            if ($LASTEXITCODE -ne 0) { throw "WiX build failed for invoke-server-windows-x86.msi" }
+            if ($LASTEXITCODE -ne 0) { throw "WiX build failed for invoke-server-windows-amd64.msi" }
             Write-Host "[OK] System MSI installer created: $SysMsiOutput" -ForegroundColor Green
         } finally {
             Pop-Location
         }
     }
 }
+
+Write-Host "Renaming binaries for release consistency..." -ForegroundColor Yellow
+Copy-Item (Join-Path $BuildDir "invoke-app.exe") (Join-Path $BuildDir "invoke-desktop-windows-amd64.exe") -Force
+Copy-Item (Join-Path $BuildDir "invoke-server.exe") (Join-Path $BuildDir "invoke-server-windows-amd64.exe") -Force
 
 Write-Host ""
 Write-Host "Build completed successfully!" -ForegroundColor Green
