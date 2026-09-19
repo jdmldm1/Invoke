@@ -29,6 +29,22 @@ jobs:
       - name: Build App Launcher Binary
         run: go build -v -o invoke-app.exe .\cmd\invoke-app\
 
+  test-and-build-linux:
+    name: Build & Test (Linux)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: Run Unit Tests
+        run: go test -v ./...
+      - name: Build Server Binary
+        run: go build -v -o invoke-server-linux .
+      - name: Build App Launcher Binary
+        run: go build -v -o invoke-app-linux ./cmd/invoke-app/
+
   sonarcloud:
     name: SonarCloud Scan
     runs-on: ubuntu-latest
