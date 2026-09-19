@@ -35,14 +35,14 @@ jobs:
           GOOS: windows
           GOARCH: amd64
           CGO_ENABLED: 0
-        run: go build -v -ldflags "-H windowsgui" -o build/invoke-server.exe .
+        run: go build -v -ldflags "-s -w -H windowsgui" -o build/invoke-server.exe .
 
       - name: Build invoke-app.exe
         env:
           GOOS: windows
           GOARCH: amd64
           CGO_ENABLED: 0
-        run: go build -v -ldflags "-H windowsgui" -o build/invoke-app.exe .\cmd\invoke-app\
+        run: go build -v -ldflags "-s -w -H windowsgui" -o build/invoke-app.exe .\cmd\invoke-app\
 
       - name: Install WiX Toolset
         run: |
@@ -133,14 +133,14 @@ jobs:
           GOOS: linux
           GOARCH: amd64
           CGO_ENABLED: 0
-        run: go build -v -o build/invoke-server-linux .
+        run: go build -v -ldflags "-s -w" -o build/invoke-server-linux .
 
       - name: Build invoke-app-linux
         env:
           GOOS: linux
           GOARCH: amd64
           CGO_ENABLED: 0
-        run: go build -v -o build/invoke-app-linux ./cmd/invoke-app/
+        run: go build -v -ldflags "-s -w" -o build/invoke-app-linux ./cmd/invoke-app/
 
       - name: Build DEB Installers
         run: |
