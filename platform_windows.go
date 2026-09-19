@@ -33,7 +33,7 @@ func authenticateWindowsUser(username, password string) bool {
 		uintptr(unsafe.Pointer(userPtr)),
 		0,
 		uintptr(unsafe.Pointer(passPtr)),
-		3,
+		2,
 		0,
 		uintptr(unsafe.Pointer(&token)),
 	)
