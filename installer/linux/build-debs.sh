@@ -32,7 +32,7 @@ chmod +x "$SERVER_DIR/usr/bin/invoke-server"
 cp "../../invoke.sh" "$SERVER_DIR/usr/bin/invoke.sh"
 cp "invoke-server.service" "$SERVER_DIR/lib/systemd/system/"
 
-dpkg-deb --build "$SERVER_DIR" "$BUILD_DIR/invoke-server.deb"
+dpkg-deb --build "$SERVER_DIR" "$BUILD_DIR/invoke-server-linux-amd64.deb"
 
 # Build invoke-app (desktop)
 APP_DIR="invoke-desktop_${VERSION}_${ARCH}"
@@ -55,7 +55,7 @@ chmod +x "$APP_DIR/usr/bin/invoke-app"
 cp "../../invoke.sh" "$APP_DIR/usr/bin/invoke.sh"
 cp "invoke.desktop" "$APP_DIR/usr/share/applications/"
 
-dpkg-deb --build "$APP_DIR" "$BUILD_DIR/invoke-desktop.deb"
+dpkg-deb --build "$APP_DIR" "$BUILD_DIR/invoke-desktop-linux-amd64.deb"
 
 # Clean up
 rm -rf "$SERVER_DIR" "$APP_DIR"
