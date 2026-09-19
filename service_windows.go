@@ -12,6 +12,15 @@ import (
 
 var elog debug.Log
 
+func checkServiceAndRun() bool {
+	isInteractive, err := svc.IsAnInteractiveSession()
+	if err == nil && !isInteractive {
+		runService("InvokeService", false)
+		return true
+	}
+	return false
+}
+
 type invokeService struct{}
 
 func (m *invokeService) Execute(args []string, r <-chan svc.ChangeRequest, changes chan<- svc.Status) (ssec bool, errno uint32) {

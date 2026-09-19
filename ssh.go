@@ -5,16 +5,16 @@ import (
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
-	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
+	"sync"
 )
 
 type SSHEndpoint struct {
@@ -85,8 +85,7 @@ func parseSSHConfigFile() []SSHEndpoint {
 			case "user":
 				current.User = val
 			case "port":
-				var p int
-				if n, err := fmt.Sscanf(val, "%d", &p); err == nil && n > 0 && p > 0 {
+				if p, err := strconv.Atoi(val); err == nil && p > 0 {
 					current.Port = p
 				}
 			}
@@ -98,12 +97,39 @@ func parseSSHConfigFile() []SSHEndpoint {
 	return endpoints
 }
 
-func sshMachineKey() []byte {
+var (
+	sshKeyPath        = defaultSSHKeyPath()
+	sshMachineKeyMu   sync.Mutex
+	sshMachineKeyData []byte
+)
 
-	hostname, _ := os.Hostname()
-	salt := "invoke-ssh-v1:" + hostname
-	sum := sha256.Sum256([]byte(salt))
-	return sum[:]
+func defaultSSHKeyPath() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		home = "."
+	}
+	return filepath.Join(home, ".invoke_sshkey")
+}
+
+func sshMachineKey() []byte {
+	sshMachineKeyMu.Lock()
+	defer sshMachineKeyMu.Unlock()
+
+	if sshMachineKeyData != nil {
+		return sshMachineKeyData
+	}
+
+	if data, err := os.ReadFile(sshKeyPath); err == nil && len(data) == 32 {
+		sshMachineKeyData = data
+		return sshMachineKeyData
+	}
+
+	key := make([]byte, 32)
+	if _, err := io.ReadFull(rand.Reader, key); err == nil {
+		_ = os.WriteFile(sshKeyPath, key, 0600)
+	}
+	sshMachineKeyData = key
+	return sshMachineKeyData
 }
 
 func encryptSSHPassword(plaintext string) string {
@@ -241,25 +267,9 @@ func handleSSHConnect(w http.ResponseWriter, r *http.Request) {
 		port = 22
 	}
 
-	var cmd string
-	if ep.UseKey {
-		cmd = "ssh " + ep.User + "@" + ep.Host
-		if port != 22 {
-			cmd = "ssh -p " + itoa(port) + " " + ep.User + "@" + ep.Host
-		}
-	} else {
-		password := decryptSSHPassword(ep.EncPassword)
-		if password != "" {
-			cmd = "ssh " + ep.User + "@" + ep.Host
-			if port != 22 {
-				cmd = "ssh -p " + itoa(port) + " " + ep.User + "@" + ep.Host
-			}
-		} else {
-			cmd = "ssh " + ep.User + "@" + ep.Host
-			if port != 22 {
-				cmd = "ssh -p " + itoa(port) + " " + ep.User + "@" + ep.Host
-			}
-		}
+	cmd := "ssh " + ep.User + "@" + ep.Host
+	if port != 22 {
+		cmd = "ssh -p " + strconv.Itoa(port) + " " + ep.User + "@" + ep.Host
 	}
 
 	_ = json.NewEncoder(w).Encode(map[string]any{
@@ -267,26 +277,6 @@ func handleSSHConnect(w http.ResponseWriter, r *http.Request) {
 		"password":  decryptSSHPassword(ep.EncPassword),
 		"auto_sudo": ep.AutoSudo,
 	})
-}
-
-func itoa(n int) string {
-	if n == 0 {
-		return "0"
-	}
-	buf := make([]byte, 0, 10)
-	neg := false
-	if n < 0 {
-		neg = true
-		n = -n
-	}
-	for n > 0 {
-		buf = append([]byte{byte('0' + n%10)}, buf...)
-		n /= 10
-	}
-	if neg {
-		buf = append([]byte{'-'}, buf...)
-	}
-	return string(buf)
 }
 
 func handleFSTree(w http.ResponseWriter, r *http.Request) {

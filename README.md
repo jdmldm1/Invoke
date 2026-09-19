@@ -1,48 +1,45 @@
 # Invoke
 
-Air-gapped powershell terminal for windows, with file editor and tools.
+Browser-based terminal + dev tools, for Windows and Linux.
+ - **Desktop** (`invoke-app`): local window, local-only, no login.
+ - **Server** (`invoke-server` / `InvokeService`): same UI over HTTP, reachable from other machines (by default). 
 
 ![Invoke terminal](docs/screenshots/terminal.png)
 
----
+## Build & Run
 
-## Subcommands & Features
-
-### Editor & Diffs
-* `pt edit <file>` : Open file in Monaco editor
-* `pt diff <file>` : Side-by-side diff vs Git `HEAD`
-
-![Monaco editor](docs/screenshots/editor.png)
-![Diff vs HEAD](docs/screenshots/diff.png)
-
-### Source Control
-* `pt git` : Visual Git status and side-by-side branch review
-
-![Git delta view](docs/screenshots/gitview.png)
-
-### Port Utility
-* `pt ports` : List listening ports and kill associated processes
-
-![Port manager](docs/screenshots/ports.png)
-
----
-
-
-### Key Bindings
-* `Ctrl + \` : Toggle file sidebar
-* `Ctrl + Shift + P` : Command search palette
-* `Ctrl + Shift + K` : Workspace scratchpad pane
-* `Ctrl + Shift + T / W` : Open / Close tab
-* `Ctrl + Shift + D / S` : Split / Stack panes
-
-### Build & Run
 ```powershell
-# 1. Build server
 go build -ldflags "-H windowsgui" -o invoke-server.exe .
-
-# 2. Build app launcher
 go build -ldflags "-H windowsgui" -o invoke-app.exe .\cmd\invoke-app\
-
-# 3. Run
 .\invoke-app.exe
 ```
+
+## Remote Access
+
+`localhost` is always trusted, no password. Remote connections need a network access password:
+
+* **System MSI**: prompted during install.
+* **Interactive**: menu → *Remote Network Access...*
+* **Headless**: `invoke-server.exe set-network-password <password>`
+
+## Windows Service
+
+```powershell
+invoke-server.exe install-service
+invoke-server.exe uninstall-service
+```
+
+## Subcommands
+
+* `pt edit <file>` — Monaco editor
+* `pt diff <file>` — diff vs Git `HEAD`
+* `pt git` — visual git status / branch review
+* `pt ports` — list/kill listening ports
+
+## Key Bindings
+
+* `Ctrl + \` — toggle file sidebar
+* `Ctrl + Shift + P` — command palette
+* `Ctrl + Shift + K` — scratchpad pane
+* `Ctrl + Shift + T / W` — open / close tab
+* `Ctrl + Shift + D / S` — split / stack panes

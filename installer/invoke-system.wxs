@@ -13,7 +13,8 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version is already installed." Schedule="afterInstallInitialize" />
 
     <Property Id="SERVICEPORT" Value="30088" />
-    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="Invoke service installed successfully. You can access it at http://localhost:[SERVICEPORT]/ (Remember to configure your Network Password to allow remote connections!)" />
+    <Property Id="NETWORKPASSWORD" Secure="yes" Hidden="yes" />
+    <Property Id="WIXUI_EXITDIALOGOPTIONALTEXT" Value="Invoke service installed successfully. You can access it at http://localhost:[SERVICEPORT]/" />
 
     <UI Id="CustomUI">
       <UIRef Id="WixUI_Common" />
@@ -21,7 +22,7 @@
 
       <Dialog Id="PortDlg" Width="370" Height="270" Title="Configure Service">
         <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
-          <Publish Event="NewDialog" Value="VerifyReadyDlg" />
+          <Publish Event="NewDialog" Value="PasswordDlg" />
         </Control>
         <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
           <Publish Event="NewDialog" Value="WelcomeDlg" />
@@ -29,19 +30,51 @@
         <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
           <Publish Event="SpawnDialog" Value="CancelDlg" />
         </Control>
-        
+
         <Control Id="Title" Type="Text" X="15" Y="6" Width="200" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Configure Service Port" />
         <Control Id="Description" Type="Text" X="25" Y="23" Width="280" Height="15" Transparent="yes" NoPrefix="yes" Text="Enter the port for the Invoke remote terminal service." />
-        
+
         <Control Id="PortLabel" Type="Text" X="20" Y="60" Width="100" Height="15" Text="Service Port:" />
         <Control Id="PortEdit" Type="Edit" X="20" Y="75" Width="100" Height="18" Property="SERVICEPORT" />
       </Dialog>
 
+      <Dialog Id="PasswordDlg" Width="370" Height="270" Title="Configure Service">
+        <Control Id="Next" Type="PushButton" X="236" Y="243" Width="56" Height="17" Default="yes" Text="!(loc.WixUINext)">
+          <Publish Event="NewDialog" Value="VerifyReadyDlg" Condition="NETWORKPASSWORD" />
+        </Control>
+        <Control Id="Back" Type="PushButton" X="180" Y="243" Width="56" Height="17" Text="!(loc.WixUIBack)">
+          <Publish Event="NewDialog" Value="PortDlg" />
+        </Control>
+        <Control Id="Cancel" Type="PushButton" X="304" Y="243" Width="56" Height="17" Cancel="yes" Text="!(loc.WixUICancel)">
+          <Publish Event="SpawnDialog" Value="CancelDlg" />
+        </Control>
+
+        <Control Id="Title" Type="Text" X="15" Y="6" Width="300" Height="15" Transparent="yes" NoPrefix="yes" Text="{\WixUI_Font_Title}Set Network Access Password" />
+        <Control Id="Description" Type="Text" X="25" Y="23" Width="320" Height="27" Transparent="yes" NoPrefix="yes" Text="Required to allow connections from other machines. Requests from this machine are always allowed without a password." />
+
+        <Control Id="PasswordLabel" Type="Text" X="20" Y="60" Width="160" Height="15" Text="Network Access Password:" />
+        <Control Id="PasswordEdit" Type="Edit" X="20" Y="75" Width="160" Height="18" Property="NETWORKPASSWORD" Password="yes" />
+        <Control Id="PasswordHint" Type="Text" X="20" Y="98" Width="320" Height="15" Text="Required — Next is enabled once a password is entered." />
+      </Dialog>
+
       <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="PortDlg" />
-      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="PortDlg" />
+      <Publish Dialog="VerifyReadyDlg" Control="Back" Event="NewDialog" Value="PasswordDlg" />
       <Publish Dialog="MaintenanceWelcomeDlg" Control="Next" Event="NewDialog" Value="VerifyReadyDlg" />
       <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
     </UI>
+
+    <CustomAction Id="SetNetworkPasswordData" Property="SetNetworkPassword" Value="[NETWORKPASSWORD]" />
+    <CustomAction Id="SetNetworkPassword"
+                  FileRef="invoke_server_exe"
+                  ExeCommand="set-network-password &quot;[CustomActionData]&quot;"
+                  Execute="deferred"
+                  Impersonate="no"
+                  Return="check" />
+
+    <InstallExecuteSequence>
+      <Custom Action="SetNetworkPasswordData" Before="SetNetworkPassword" Condition="NETWORKPASSWORD" />
+      <Custom Action="SetNetworkPassword" Before="StartServices" Condition="NETWORKPASSWORD" />
+    </InstallExecuteSequence>
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="InvokeCompanyFolder" Name="Invoke">
