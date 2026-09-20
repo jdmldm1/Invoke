@@ -152,6 +152,25 @@ func serveTerminalWindow() {
 		w.Write([]byte(htmlStr))
 	})
 	mux.Handle("/web/", http.FileServer(http.FS(webFS)))
+	mux.HandleFunc("/manifest.json", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/manifest+json")
+		b, err := webFS.ReadFile("web/manifest.json")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write(b)
+	})
+	mux.HandleFunc("/sw.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/javascript")
+		w.Header().Set("Service-Worker-Allowed", "/")
+		b, err := webFS.ReadFile("web/sw.js")
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write(b)
+	})
 	mux.HandleFunc("/ws", handleTerminalWS)
 	mux.HandleFunc("/ws/view", handleTerminalViewWS)
 	mux.HandleFunc("/cast", handleCastPage)

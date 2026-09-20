@@ -210,25 +210,51 @@ func serveRemoteLoginPage(w http.ResponseWriter, errMsg string) {
 	w.WriteHeader(http.StatusUnauthorized)
 	errHTML := ""
 	if errMsg != "" {
-		errHTML = `<div style="color:#c4756e;margin-bottom:12px;font-size:13px">` + html.EscapeString(errMsg) + `</div>`
+		errHTML = `<div style="color:#f87171;background:rgba(248,113,113,0.12);padding:10px 14px;border-radius:8px;border:1px solid rgba(248,113,113,0.25);margin-bottom:16px;font-size:13px;text-align:center">` + html.EscapeString(errMsg) + `</div>`
 	}
-	fmt.Fprintf(w, `<!doctype html><html><head><title>Invoke - Remote Access</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
+	fmt.Fprintf(w, `<!doctype html><html lang="en"><head><title>Invoke &mdash; Remote Access</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#000000">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Invoke">
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" href="/web/favicon.png">
+<link rel="apple-touch-icon" href="/web/favicon.png">
 <style>
-body{background:#141414;color:#e2e2e2;font-family:Segoe UI,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
-form{background:#1c1c1c;padding:32px;border-radius:8px;min-width:280px;border:1px solid #2a2a2a}
-h1{font-size:16px;margin:0 0 8px;font-weight:600}
-p.sub{font-size:12px;color:#888;margin:0 0 16px}
-input{width:100%%;padding:9px;margin-bottom:12px;background:#141414;border:1px solid #333;color:#e2e2e2;border-radius:4px;box-sizing:border-box;font-size:14px}
-button{width:100%%;padding:9px;background:#0ea5e9;border:none;color:#fff;border-radius:4px;cursor:pointer;font-size:14px}
+:root{--bg:#050505;--card:#141414;--border:#262626;--accent:#a855f7;--accent-hover:#9333ea;--text:#e2e2e2;--muted:#888888}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Oxygen,Ubuntu,Cantarell,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;min-height:100dvh;margin:0;padding:16px}
+.login-card{background:var(--card);padding:32px 28px;border-radius:14px;width:100%%;max-width:340px;border:1px solid var(--border);box-shadow:0 20px 48px rgba(0,0,0,0.85);display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:10px;margin-bottom:16px}
+.brand svg{width:28px;height:28px}
+.title{font-size:18px;margin:0 0 6px;font-weight:700;letter-spacing:-0.2px}
+.sub{font-size:13px;color:var(--muted);margin:0 0 20px;line-height:1.4}
+input{width:100%%;height:44px;padding:0 14px;margin-bottom:14px;background:#0a0a0a;border:1px solid var(--border);color:var(--text);border-radius:8px;font-size:15px;outline:none;transition:border-color 0.15s,box-shadow 0.15s}
+input:focus{border-color:var(--accent);box-shadow:0 0 0 2px rgba(168,85,247,0.25)}
+button{width:100%%;height:44px;background:var(--accent);border:none;color:#fff;border-radius:8px;cursor:pointer;font-size:15px;font-weight:600;display:flex;align-items:center;justify-content:center;transition:background 0.15s,transform 0.05s}
+button:hover{background:var(--accent-hover)}
+button:active{transform:scale(0.98)}
 </style></head><body>
-<form method="POST" action="/remote-login">
-<h1>Invoke &mdash; Remote Access</h1>
-<p class="sub">Enter the network access password</p>
+<form class="login-card" method="POST" action="/remote-login">
+<div class="brand">
+  <svg viewBox="0 0 24 24" fill="none" stroke="#a855f7" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg>
+  <span style="font-weight:700;font-size:18px;color:#a855f7">Invoke</span>
+</div>
+<h1 class="title">Remote Access</h1>
+<p class="sub">Enter your network access password to unlock</p>
 %s
-<input type="password" name="password" placeholder="Password" autofocus>
-<button type="submit">Unlock</button>
-</form></body></html>`, errHTML)
+<input type="password" name="password" placeholder="Password" required autofocus autocomplete="current-password" autocapitalize="none" autocorrect="off">
+<button type="submit">Unlock Terminal</button>
+</form>
+<script>
+if('serviceWorker' in navigator){
+  window.addEventListener('load',()=>{ navigator.serviceWorker.register('/sw.js').catch(()=>{}); });
+}
+</script>
+</body></html>`, errHTML)
 }
 
 func handleRemoteLogin(w http.ResponseWriter, r *http.Request) {
@@ -288,7 +314,9 @@ func networkAuthMiddleware(next http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 			return
 		}
-		if r.URL.Path == "/web/xterm.min.js" || r.URL.Path == "/web/xterm.min.css" || r.URL.Path == "/web/xterm-addon-fit.min.js" {
+		if r.URL.Path == "/manifest.json" || r.URL.Path == "/sw.js" ||
+			r.URL.Path == "/web/favicon.png" || r.URL.Path == "/web/favicon.ico" ||
+			r.URL.Path == "/web/xterm.min.js" || r.URL.Path == "/web/xterm.min.css" || r.URL.Path == "/web/xterm-addon-fit.min.js" {
 			next.ServeHTTP(w, r)
 			return
 		}
