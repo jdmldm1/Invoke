@@ -16,6 +16,8 @@ func checkServiceAndRun() bool {
 	isInteractive, err := svc.IsAnInteractiveSession()
 	if err == nil && !isInteractive {
 		os.Setenv("INVOKE_SYSTEM", "1")
+		initConfig()
+		initLayouts()
 		runService("InvokeService", false)
 		return true
 	}

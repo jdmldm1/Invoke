@@ -63,17 +63,14 @@
       <Publish Dialog="ExitDialog" Control="Finish" Event="EndDialog" Value="Return" Order="999" />
     </UI>
 
-    <Property Id="SetNetworkPassword" Hidden="yes" />
-    <CustomAction Id="SetNetworkPasswordData" Property="SetNetworkPassword" Value="[NETWORKPASSWORD]" />
     <CustomAction Id="SetNetworkPassword"
                   FileRef="invoke_server_exe"
-                  ExeCommand="set-network-password &quot;[CustomActionData]&quot; --system"
+                  ExeCommand="set-network-password &quot;[NETWORKPASSWORD]&quot; --system"
                   Execute="deferred"
                   Impersonate="no"
                   Return="check" />
 
     <InstallExecuteSequence>
-      <Custom Action="SetNetworkPasswordData" Before="SetNetworkPassword" Condition="NETWORKPASSWORD" />
       <Custom Action="SetNetworkPassword" Before="StartServices" Condition="NETWORKPASSWORD" />
     </InstallExecuteSequence>
 

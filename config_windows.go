@@ -3,8 +3,12 @@
 package main
 
 import (
-	"golang.org/x/sys/windows/registry"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strconv"
+
+	"golang.org/x/sys/windows/registry"
 )
 
 func applySystemConfig(cfg *ConfigData) {
@@ -22,5 +26,18 @@ func applySystemConfig(cfg *ConfigData) {
 			cfg.NetworkPasswordSalt = salt
 		}
 		k.Close()
+	}
+}
+
+func saveSystemPassword(hash, salt string) {
+	if k, _, err := registry.CreateKey(registry.LOCAL_MACHINE, `Software\Invoke`, registry.SET_VALUE); err == nil {
+		k.SetStringValue("NetworkPasswordHash", hash)
+		k.SetStringValue("NetworkPasswordSalt", salt)
+		k.Close()
+	} else {
+		if f, fErr := os.OpenFile(filepath.Join(os.TempDir(), `invoke-reg.log`), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666); fErr == nil {
+			f.WriteString(fmt.Sprintf("Failed to open/create registry key: %v\n", err))
+			f.Close()
+		}
 	}
 }

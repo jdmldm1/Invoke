@@ -259,18 +259,28 @@ func loadConfig() ConfigData {
 
 		if na, ok := raw["network_access"].(bool); ok {
 			data.NetworkAccess = na
+		} else {
+			data.NetworkAccess = defaultConfig.NetworkAccess
 		}
-		if h, ok := raw["network_password_hash"].(string); ok {
+		if h, ok := raw["network_password_hash"].(string); ok && h != "" {
 			data.NetworkPasswordHash = h
+		} else {
+			data.NetworkPasswordHash = defaultConfig.NetworkPasswordHash
 		}
-		if s, ok := raw["network_password_salt"].(string); ok {
+		if s, ok := raw["network_password_salt"].(string); ok && s != "" {
 			data.NetworkPasswordSalt = s
+		} else {
+			data.NetworkPasswordSalt = defaultConfig.NetworkPasswordSalt
 		}
 		if sp, ok := raw["server_port"].(float64); ok {
 			data.ServerPort = int(sp)
+		} else {
+			data.ServerPort = defaultConfig.ServerPort
 		}
 		if ka, ok := raw["keep_alive"].(bool); ok {
 			data.KeepAlive = ka
+		} else {
+			data.KeepAlive = defaultConfig.KeepAlive
 		}
 
 		if epRaw, ok := raw["ssh_endpoints"].([]any); ok {
@@ -298,6 +308,8 @@ func loadConfig() ConfigData {
 	} else {
 		data = defaultConfig
 	}
+
+	applySystemConfig(&data)
 
 	return data
 }
