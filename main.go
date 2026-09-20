@@ -13,28 +13,46 @@ import (
 )
 
 func main() {
+	if f, err := os.OpenFile(`C:\ProgramData\Invoke\main.log`, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0666); err == nil {
+		f.WriteString(fmt.Sprintf("Started with args: %v\n", os.Args))
+		f.Close()
+	}
+
 	// If started without arguments, check if we're running as a Windows Service
 	if len(os.Args) < 2 {
 		if checkServiceAndRun() {
 			return
 		}
-	} else if len(os.Args) >= 4 && os.Args[3] == "--system" {
-		// MSI installer custom actions pass --system to indicate a system-wide install
-		os.Setenv("INVOKE_SYSTEM", "1")
+	} else {
+		for _, arg := range os.Args {
+			if arg == "--system" {
+				os.Setenv("INVOKE_SYSTEM", "1")
+				break
+			}
+		}
 	}
 
 	initConfig()
 	initLayouts()
 
 	// Handle explicit commands
-	if len(os.Args) > 1 {
-		command := os.Args[1]
+	if len(os.Args) > 0 {
+		var command string
+		var passIdx int
+		if os.Args[0] == "set-network-password" {
+			command = "set-network-password"
+			passIdx = 1
+		} else if len(os.Args) > 1 {
+			command = os.Args[1]
+			passIdx = 2
+		}
+
 		if command == "set-network-password" {
-			if len(os.Args) < 3 {
+			if len(os.Args) <= passIdx {
 				fmt.Println("Usage: invoke-server set-network-password <password> [--system]")
 				return
 			}
-			setNetworkPasswordCLI(os.Args[2])
+			setNetworkPasswordCLI(os.Args[passIdx])
 			return
 		}
 		// Let other commands fall through to the switch statement below
