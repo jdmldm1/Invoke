@@ -118,9 +118,10 @@
     font-family:'Segoe UI',sans-serif;font-size:12px;display:none;color:var(--text);padding:4px}
   .suggest-item{padding:5px 9px;cursor:pointer;white-space:nowrap;border-radius:4px}
   .suggest-item:hover,.suggest-item.active{background:var(--accent);color:var(--ink)}
-  #ghost-text{position:fixed;pointer-events:none;z-index:9000;color:rgba(180,180,180,0.42);
+  #ghost-text{position:fixed;pointer-events:auto;cursor:pointer;z-index:9000;color:rgba(190,190,190,0.55);
     font-family:'Cascadia Code','Fira Code',monospace;font-size:inherit;white-space:pre;
-    display:none;transition:opacity .15s}
+    display:none;transition:opacity .15s;user-select:none;-webkit-user-select:none;touch-action:manipulation}
+  #ghost-text:hover,#ghost-text:active{color:var(--accent);text-decoration:underline dotted}
   .snippet-modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:10000;display:flex;align-items:center;justify-content:center}
   .snippet-modal{background:#1e1e1e;border:1px solid var(--border2);border-radius:12px;padding:28px 32px;min-width:400px;max-width:580px;
     box-shadow:0 20px 60px rgba(0,0,0,.8);font-family:'Segoe UI',sans-serif}
@@ -3645,7 +3646,11 @@
           hideGhost();
           return;
         }
-        setTimeout(() => {
+        self.triggerSuggestions();
+      });
+      this.triggerSuggestions = () => {
+        clearTimeout(self.ghostDebounceTimer);
+        self.ghostDebounceTimer = setTimeout(() => {
           if (self !== activePane) return;
           try {
             const buf = self.term.buffer.active;
@@ -3663,11 +3668,18 @@
           } catch(_) {}
           showTerminalSuggestions(self);
         }, 50);
-      });
+      };
       this.term.onData(d=>{
         if(broadcastOn && self.tab===activeTab && self.tab.type==='term'){
           self.tab.panes.forEach(p=>p.send({t:'i',d}));
         } else { self.send({t:'i',d}); }
+
+        if (d === '\r' || d === '\n') {
+          hideSuggest();
+          hideGhost();
+        } else {
+          self.triggerSuggestions();
+        }
       });
       this.term.onSelectionChange(()=>{ if(self===activePane){ const s=self.term.getSelection(); selChars=s?s.length:0; updateFooter(); } });
       try{ this.term.parser.registerOscHandler(7000,(data)=>{
@@ -4949,11 +4961,17 @@
     } else if (key) {
       switch (key) {
         case 'ESC': sendStr = '\x1b'; break;
-        case 'TAB': sendStr = '\t'; break;
+        case 'TAB':
+          if (ghostActive && acceptGhost(activePane)) return;
+          sendStr = '\t';
+          break;
         case 'UP': sendStr = '\x1b[A'; break;
         case 'DOWN': sendStr = '\x1b[B'; break;
         case 'LEFT': sendStr = '\x1b[D'; break;
-        case 'RIGHT': sendStr = '\x1b[C'; break;
+        case 'RIGHT':
+          if (ghostActive && acceptGhost(activePane)) return;
+          sendStr = '\x1b[C';
+          break;
         case 'HOME': sendStr = '\x1b[H'; break;
         case 'END': sendStr = '\x1b[F'; break;
         case 'PGUP': sendStr = '\x1b[5~'; break;
@@ -5054,6 +5072,20 @@
         e.stopPropagation();
         openPalette();
       });
+    }
+
+    const ghostEl = document.getElementById('ghost-text');
+    if (ghostEl) {
+      const onGhostTap = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        vibrate(12);
+        if (activePane) {
+          acceptGhost(activePane);
+        }
+      };
+      ghostEl.addEventListener('touchstart', onGhostTap, { passive: false });
+      ghostEl.addEventListener('mousedown', onGhostTap);
     }
 
     const toggleDock = (e) => {
