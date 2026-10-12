@@ -38,6 +38,10 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version: '1.26.x'
+      - name: Check formatting
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
       - name: Run Unit Tests
         run: go test -v ./...
       - name: Build Server Binary

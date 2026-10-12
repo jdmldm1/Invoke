@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"strconv"
 	"sync"
@@ -21,11 +20,7 @@ var wsUpgrader = websocket.Upgrader{
 		if origin == "" || networkAccessEnabled {
 			return true
 		}
-		u, err := url.Parse(origin)
-		if err != nil {
-			return false
-		}
-		return u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1"
+		return isLocalOrigin(origin)
 	},
 }
 

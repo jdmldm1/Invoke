@@ -292,16 +292,40 @@ func handleRemoteLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, "/", http.StatusSeeOther)
 }
 
+// isLocalHostname reports whether a bare hostname refers to this machine.
+func isLocalHostname(hostname string) bool {
+	return hostname == "localhost" || hostname == "127.0.0.1" || hostname == "::1"
+}
+
+// isLocalOrigin reports whether an Origin header value points at this machine.
+func isLocalOrigin(origin string) bool {
+	u, err := url.Parse(origin)
+	return err == nil && isLocalHostname(u.Hostname())
+}
+
+// isLocalHostHeader reports whether a Host header value points at this machine.
+func isLocalHostHeader(host string) bool {
+	hostname, _, err := net.SplitHostPort(host)
+	if err != nil {
+		hostname = strings.Trim(host, "[]")
+	}
+	return isLocalHostname(hostname)
+}
+
+// localAuthMiddleware protects loopback-only mode. The listener is only reachable from this
+// machine, but a web page on any site can still reach it from the user's browser, so requests
+// must name this machine in both Host (blocks DNS rebinding, where the attacker's hostname
+// resolves to 127.0.0.1) and, when present, Origin (blocks cross-site requests).
 func localAuthMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !networkAccessEnabled {
-			origin := r.Header.Get("Origin")
-			if origin != "" {
-				u, err := url.Parse(origin)
-				if err != nil || (u.Hostname() != "localhost" && u.Hostname() != "127.0.0.1") {
-					http.Error(w, "Forbidden Origin", http.StatusForbidden)
-					return
-				}
+			if !isLocalHostHeader(r.Host) {
+				http.Error(w, "Forbidden Host", http.StatusForbidden)
+				return
+			}
+			if origin := r.Header.Get("Origin"); origin != "" && !isLocalOrigin(origin) {
+				http.Error(w, "Forbidden Origin", http.StatusForbidden)
+				return
 			}
 		}
 		next.ServeHTTP(w, r)
