@@ -30,3 +30,10 @@ Thumbs.db
 # Local config (contains personal Ollama host/model preferences)
 .invoke.json
 .invoke_layouts.json
+
+# Local build output, installer logs and scratch API dumps
+invoke-desktop-linux-*
+invoke-server-linux-*
+invoke-app-linux
+install.log
+issues*.json
