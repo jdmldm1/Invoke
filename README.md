@@ -1,6 +1,5 @@
-# Invoke
+<p align="center"><img src="docs/banner.png" alt="Invoke" width="100%"></p>
 
-Browser-based terminal + dev tools, for Windows and Linux.
  - **Desktop** (`invoke-app`): local window, local-only, no login.
  - **Server** (`invoke-server` / `InvokeService`): same UI over HTTP, reachable from other machines (by default). 
 
